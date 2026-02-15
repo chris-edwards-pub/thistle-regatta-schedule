@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}{{ "Edit" if regatta else "New" }} Regatta — Thistle Regattas{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <h2 class="mb-4">{{ "Edit" if regatta else "New" }} Regatta</h2>
+        <form method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="mb-3">
+                <label for="name" class="form-label">Regatta Name</label>
+                <input type="text" class="form-control" id="name" name="name" required value="{{ regatta.name if regatta else '' }}">
+            </div>
+            <div class="mb-3">
+                <label for="location" class="form-label">Location</label>
+                <input type="text" class="form-control" id="location" name="location" required value="{{ regatta.location if regatta else '' }}" placeholder="e.g. Lake Eustis, FL">
+            </div>
+            <div class="mb-3">
+                <label for="location_url" class="form-label">Google Maps Link (optional)</label>
+                <input type="url" class="form-control" id="location_url" name="location_url" value="{{ regatta.location_url if regatta and regatta.location_url else '' }}" placeholder="https://maps.google.com/...">
+            </div>
+            <div class="row mb-3">
+                <div class="col">
+                    <label for="start_date" class="form-label">Start Date</label>
+                    <input type="date" class="form-control" id="start_date" name="start_date" required value="{{ regatta.start_date.isoformat() if regatta else '' }}">
+                </div>
+                <div class="col">
+                    <label for="end_date" class="form-label">End Date (optional)</label>
+                    <input type="date" class="form-control" id="end_date" name="end_date" value="{{ regatta.end_date.isoformat() if regatta and regatta.end_date else '' }}">
+                </div>
+            </div>
+            <div class="mb-3">
+                <label for="notes" class="form-label">Notes (optional)</label>
+                <textarea class="form-control" id="notes" name="notes" rows="2">{{ regatta.notes if regatta and regatta.notes else '' }}</textarea>
+            </div>
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary">Save</button>
+                <a href="{{ url_for('regattas.index') }}" class="btn btn-outline-secondary">Cancel</a>
+            </div>
+        </form>
+
+        {% if regatta %}
+        <hr>
+        <h5>Documents</h5>
+        {% for doc in regatta.documents %}
+        <div class="d-flex align-items-center mb-2">
+            <a href="{{ url_for('regattas.download_doc', doc_id=doc.id) }}" class="badge bg-info text-decoration-none me-2">{{ doc.doc_type }}</a>
+            <span class="me-2">{{ doc.original_filename }}</span>
+            <form method="POST" action="{{ url_for('regattas.delete_doc', doc_id=doc.id) }}" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-sm btn-outline-danger">Remove</button>
+            </form>
+        </div>
+        {% endfor %}
+        <form method="POST" action="{{ url_for('regattas.upload_doc', regatta_id=regatta.id) }}" enctype="multipart/form-data" class="row g-2 align-items-end mt-2">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="col-auto">
+                <select name="doc_type" class="form-select form-select-sm">
+                    <option value="NOR">NOR</option>
+                    <option value="SI">SI</option>
+                    <option value="Other">Other</option>
+                </select>
+            </div>
+            <div class="col-auto">
+                <input type="file" name="file" class="form-control form-control-sm" accept=".pdf,.doc,.docx" required>
+            </div>
+            <div class="col-auto">
+                <button type="submit" class="btn btn-sm btn-outline-primary">Upload</button>
+            </div>
+        </form>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
