@@ -2,6 +2,8 @@ import os
 import uuid
 from datetime import date
 
+from urllib.parse import quote_plus
+
 from flask import current_app, flash, redirect, render_template, request, send_from_directory, url_for
 from flask_login import current_user, login_required
 
@@ -105,6 +107,9 @@ def download_doc(doc_id: int):
         flash("Document not found.", "error")
         return redirect(url_for("regattas.index"))
 
+    if doc.url:
+        return redirect(doc.url)
+
     upload_folder = current_app.config["UPLOAD_FOLDER"]
     return send_from_directory(
         upload_folder, doc.stored_filename, download_name=doc.original_filename
@@ -123,32 +128,43 @@ def upload_doc(regatta_id: int):
         flash("Regatta not found.", "error")
         return redirect(url_for("regattas.index"))
 
-    file = request.files.get("file")
     doc_type = request.form.get("doc_type", "Other")
+    doc_url = request.form.get("doc_url", "").strip()
+    file = request.files.get("file")
 
-    if not file or not file.filename:
-        flash("No file selected.", "error")
-        return redirect(url_for("regattas.edit", regatta_id=regatta_id))
+    if doc_url:
+        # URL-based document
+        doc = Document(
+            regatta_id=regatta_id,
+            doc_type=doc_type,
+            url=doc_url,
+            uploaded_by=current_user.id,
+        )
+        db.session.add(doc)
+        db.session.commit()
+        flash(f"{doc_type} link added.", "success")
+    elif file and file.filename:
+        # File-based document
+        ext = os.path.splitext(file.filename)[1].lower()
+        stored_filename = f"{uuid.uuid4().hex}{ext}"
 
-    # Generate safe stored filename
-    ext = os.path.splitext(file.filename)[1].lower()
-    stored_filename = f"{uuid.uuid4().hex}{ext}"
+        upload_folder = current_app.config["UPLOAD_FOLDER"]
+        os.makedirs(upload_folder, exist_ok=True)
+        file.save(os.path.join(upload_folder, stored_filename))
 
-    upload_folder = current_app.config["UPLOAD_FOLDER"]
-    os.makedirs(upload_folder, exist_ok=True)
-    file.save(os.path.join(upload_folder, stored_filename))
+        doc = Document(
+            regatta_id=regatta_id,
+            doc_type=doc_type,
+            original_filename=file.filename,
+            stored_filename=stored_filename,
+            uploaded_by=current_user.id,
+        )
+        db.session.add(doc)
+        db.session.commit()
+        flash(f"{doc_type} uploaded.", "success")
+    else:
+        flash("Provide either a URL or a file.", "error")
 
-    doc = Document(
-        regatta_id=regatta_id,
-        doc_type=doc_type,
-        original_filename=file.filename,
-        stored_filename=stored_filename,
-        uploaded_by=current_user.id,
-    )
-    db.session.add(doc)
-    db.session.commit()
-
-    flash(f"{doc_type} uploaded.", "success")
     return redirect(url_for("regattas.edit", regatta_id=regatta_id))
 
 
@@ -166,11 +182,12 @@ def delete_doc(doc_id: int):
 
     regatta_id = doc.regatta_id
 
-    # Delete file from disk
-    upload_folder = current_app.config["UPLOAD_FOLDER"]
-    filepath = os.path.join(upload_folder, doc.stored_filename)
-    if os.path.exists(filepath):
-        os.remove(filepath)
+    # Delete file from disk if it's a file-based document
+    if doc.stored_filename:
+        upload_folder = current_app.config["UPLOAD_FOLDER"]
+        filepath = os.path.join(upload_folder, doc.stored_filename)
+        if os.path.exists(filepath):
+            os.remove(filepath)
 
     db.session.delete(doc)
     db.session.commit()
@@ -203,7 +220,11 @@ def _save_regatta(regatta: Regatta | None):
 
     regatta.name = name
     regatta.location = location
-    regatta.location_url = location_url or None
+    if location_url:
+        regatta.location_url = location_url
+    else:
+        # Auto-generate Google Maps search link from location text
+        regatta.location_url = f"https://www.google.com/maps/search/{quote_plus(location)}"
     regatta.start_date = start_date
     regatta.end_date = end_date
     regatta.notes = notes or None

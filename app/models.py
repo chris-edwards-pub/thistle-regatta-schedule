@@ -80,9 +80,10 @@ class Document(db.Model):
     regatta_id = db.Column(
         db.Integer, db.ForeignKey("regattas.id"), nullable=False
     )
-    doc_type = db.Column(db.String(20), nullable=False)  # NOR, SI, other
-    original_filename = db.Column(db.String(255), nullable=False)
-    stored_filename = db.Column(db.String(255), nullable=False)
+    doc_type = db.Column(db.String(20), nullable=False)  # NOR, SI, WWW
+    original_filename = db.Column(db.String(255), nullable=True)
+    stored_filename = db.Column(db.String(255), nullable=True)
+    url = db.Column(db.String(500), nullable=True)  # External URL (alternative to file)
     uploaded_at = db.Column(
         db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )

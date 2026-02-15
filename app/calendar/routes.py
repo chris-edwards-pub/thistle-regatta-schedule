@@ -1,6 +1,7 @@
 import secrets
 from datetime import timedelta
 
+from markupsafe import Markup
 from flask import Response, flash, redirect, url_for
 from flask_login import current_user, login_required
 from icalendar import Calendar, Event
@@ -21,7 +22,9 @@ def subscribe():
     feed_url = url_for(
         "calendar.ical_feed", token=current_user.calendar_token, _external=True
     )
-    flash(f"Subscribe to this URL in your calendar app: {feed_url}", "success")
+    flash(Markup(
+        f'Subscribe to this URL in your calendar app: <a href="{feed_url}" class="alert-link">{feed_url}</a>'
+    ), "success")
     return redirect(url_for("regattas.index"))
 
 

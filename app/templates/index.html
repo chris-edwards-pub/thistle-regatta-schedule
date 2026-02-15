@@ -45,7 +45,7 @@
                 </td>
                 <td>
                     {% for doc in regatta.documents %}
-                    <a href="{{ url_for('regattas.download_doc', doc_id=doc.id) }}" class="badge bg-info text-decoration-none doc-link">{{ doc.doc_type }}</a>
+                    <a href="{% if doc.url %}{{ doc.url }}{% else %}{{ url_for('regattas.download_doc', doc_id=doc.id) }}{% endif %}" class="badge bg-info text-decoration-none doc-link" target="_blank">{{ doc.doc_type }}</a>
                     {% endfor %}
                 </td>
                 <td>
