@@ -1,0 +1,44 @@
+# Thistle Regatta Schedule — Project Standards
+
+## Python Standards
+- Python 3.11+
+- Type hints encouraged on function signatures
+- f-strings over `.format()` or `%` formatting
+- Use pathlib for file paths where practical
+
+## Code Style
+- **Formatter:** Black (line length 88)
+- **Imports:** isort (Black-compatible profile)
+- **Linting:** flake8
+- Run: `black . && isort . && flake8`
+
+## Project Conventions
+- Flask app factory pattern (`create_app()` in `app/__init__.py`)
+- Blueprints for route organization (`auth`, `regattas`)
+- SQLAlchemy models in `app/models.py`
+- Config from environment variables via `app/config.py`
+- All secrets in `.env` — **never committed**
+
+## Version Schema
+Semantic Versioning (SemVer): `MAJOR.MINOR.PATCH`
+- **MAJOR:** breaking changes (auth overhaul, DB schema rewrite)
+- **MINOR:** new features (new page, new functionality)
+- **PATCH:** bug fixes, small tweaks
+- Version tracked in `app/__init__.py` as `__version__`
+- Current version: `0.1.0`
+
+## Git Workflow
+- `main` branch is production-ready
+- All new work on feature branches: `feature/<name>`
+- Merge to `main` when feature is complete and tested
+- Commit messages: imperative mood, concise ("Add regatta CRUD routes")
+
+## Testing
+- Framework: pytest
+- Tests in `tests/` directory
+- Run: `pytest`
+
+## Docker
+- Local dev: `docker compose up --build`
+- Production: AWS Lightsail container service
+- 3 containers: web (Flask/Gunicorn), db (MySQL 8), nginx (reverse proxy)
