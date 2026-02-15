@@ -5,7 +5,7 @@
     {% if current_user.is_admin %}
     <a href="{{ url_for('regattas.create') }}" class="btn btn-primary btn-sm">+ Add Regatta</a>
     {% endif %}
-    <button onclick="window.print()" class="btn btn-outline-secondary btn-sm no-print">Print</button>
+    <button id="print-btn" type="button" class="btn btn-outline-secondary btn-sm no-print">Print</button>
 </div>
 
 {% macro regatta_table(regattas, is_past) %}
@@ -96,4 +96,11 @@
 <h5 class="mt-4">Past</h5>
 {{ regatta_table(past, true) }}
 {% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById('print-btn').addEventListener('click', function() {
+    window.print();
+});
+</script>
 {% endblock %}
