@@ -1,0 +1,32 @@
+from flask import Flask
+from flask_login import LoginManager
+from flask_migrate import Migrate
+from flask_sqlalchemy import SQLAlchemy
+
+__version__ = "0.1.0"
+
+db = SQLAlchemy()
+migrate = Migrate()
+login_manager = LoginManager()
+login_manager.login_view = "auth.login"
+
+
+def create_app():
+    app = Flask(__name__)
+    app.config.from_object("app.config.Config")
+
+    db.init_app(app)
+    migrate.init_app(app, db)
+    login_manager.init_app(app)
+
+    from app.auth import bp as auth_bp
+    from app.regattas import bp as regattas_bp
+
+    app.register_blueprint(auth_bp)
+    app.register_blueprint(regattas_bp)
+
+    from app.commands import register_commands
+
+    register_commands(app)
+
+    return app
