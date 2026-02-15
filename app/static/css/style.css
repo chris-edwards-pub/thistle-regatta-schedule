@@ -33,6 +33,15 @@
     margin-right: 4px;
 }
 
+.location-link {
+    color: #000;
+    text-decoration: underline;
+}
+
+.location-link:hover {
+    color: #333;
+}
+
 /* Print styles */
 @media print {
     .no-print,
