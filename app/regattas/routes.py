@@ -1,6 +1,8 @@
+import os
+import uuid
 from datetime import date
 
-from flask import flash, redirect, render_template, request, url_for
+from flask import current_app, flash, redirect, render_template, request, send_from_directory, url_for
 from flask_login import current_user, login_required
 
 from app import db
@@ -93,6 +95,87 @@ def rsvp(regatta_id: int):
 
     db.session.commit()
     return redirect(url_for("regattas.index"))
+
+
+@bp.route("/docs/<int:doc_id>")
+@login_required
+def download_doc(doc_id: int):
+    doc = db.session.get(Document, doc_id)
+    if not doc:
+        flash("Document not found.", "error")
+        return redirect(url_for("regattas.index"))
+
+    upload_folder = current_app.config["UPLOAD_FOLDER"]
+    return send_from_directory(
+        upload_folder, doc.stored_filename, download_name=doc.original_filename
+    )
+
+
+@bp.route("/regattas/<int:regatta_id>/upload", methods=["POST"])
+@login_required
+def upload_doc(regatta_id: int):
+    if not current_user.is_admin:
+        flash("Access denied.", "error")
+        return redirect(url_for("regattas.index"))
+
+    regatta = db.session.get(Regatta, regatta_id)
+    if not regatta:
+        flash("Regatta not found.", "error")
+        return redirect(url_for("regattas.index"))
+
+    file = request.files.get("file")
+    doc_type = request.form.get("doc_type", "Other")
+
+    if not file or not file.filename:
+        flash("No file selected.", "error")
+        return redirect(url_for("regattas.edit", regatta_id=regatta_id))
+
+    # Generate safe stored filename
+    ext = os.path.splitext(file.filename)[1].lower()
+    stored_filename = f"{uuid.uuid4().hex}{ext}"
+
+    upload_folder = current_app.config["UPLOAD_FOLDER"]
+    os.makedirs(upload_folder, exist_ok=True)
+    file.save(os.path.join(upload_folder, stored_filename))
+
+    doc = Document(
+        regatta_id=regatta_id,
+        doc_type=doc_type,
+        original_filename=file.filename,
+        stored_filename=stored_filename,
+        uploaded_by=current_user.id,
+    )
+    db.session.add(doc)
+    db.session.commit()
+
+    flash(f"{doc_type} uploaded.", "success")
+    return redirect(url_for("regattas.edit", regatta_id=regatta_id))
+
+
+@bp.route("/docs/<int:doc_id>/delete", methods=["POST"])
+@login_required
+def delete_doc(doc_id: int):
+    if not current_user.is_admin:
+        flash("Access denied.", "error")
+        return redirect(url_for("regattas.index"))
+
+    doc = db.session.get(Document, doc_id)
+    if not doc:
+        flash("Document not found.", "error")
+        return redirect(url_for("regattas.index"))
+
+    regatta_id = doc.regatta_id
+
+    # Delete file from disk
+    upload_folder = current_app.config["UPLOAD_FOLDER"]
+    filepath = os.path.join(upload_folder, doc.stored_filename)
+    if os.path.exists(filepath):
+        os.remove(filepath)
+
+    db.session.delete(doc)
+    db.session.commit()
+    flash("Document removed.", "success")
+    return redirect(url_for("regattas.edit", regatta_id=regatta_id))
 
 
 def _save_regatta(regatta: Regatta | None):
