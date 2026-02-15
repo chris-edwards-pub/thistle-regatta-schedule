@@ -17,8 +17,14 @@
                 {% if current_user.is_admin %}
                 <a class="nav-link" href="{{ url_for('auth.admin_users') }}">Crew</a>
                 {% endif %}
-                <span class="nav-link text-light">{{ current_user.initials }}</span>
-                <a class="nav-link" href="{{ url_for('auth.logout') }}">Logout</a>
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">{{ current_user.initials }}</a>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item" href="{{ url_for('auth.profile') }}">Profile Settings</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="{{ url_for('auth.logout') }}">Logout</a></li>
+                    </ul>
+                </li>
             </div>
             {% endif %}
         </div>

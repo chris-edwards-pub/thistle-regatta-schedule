@@ -64,6 +64,39 @@ def register(token: str):
     return render_template("register.html", user=user)
 
 
+@bp.route("/profile", methods=["GET", "POST"])
+@login_required
+def profile():
+    if request.method == "POST":
+        display_name = request.form.get("display_name", "").strip()
+        initials = request.form.get("initials", "").strip().upper()
+        email = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "")
+        password2 = request.form.get("password2", "")
+
+        if not display_name or not initials or not email:
+            flash("Name, initials, and email are required.", "error")
+        elif len(initials) < 2 or len(initials) > 3:
+            flash("Initials must be 2-3 characters.", "error")
+        elif email != current_user.email and User.query.filter_by(email=email).first():
+            flash("That email is already in use.", "error")
+        elif password and len(password) < 6:
+            flash("Password must be at least 6 characters.", "error")
+        elif password and password != password2:
+            flash("Passwords do not match.", "error")
+        else:
+            current_user.display_name = display_name
+            current_user.initials = initials
+            current_user.email = email
+            if password:
+                current_user.set_password(password)
+            db.session.commit()
+            flash("Profile updated.", "success")
+            return redirect(url_for("auth.profile"))
+
+    return render_template("profile.html")
+
+
 @bp.route("/admin/users")
 @login_required
 def admin_users():
