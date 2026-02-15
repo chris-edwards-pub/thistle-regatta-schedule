@@ -1,10 +1,12 @@
 {% extends "base.html" %}
 {% block content %}
-{% if current_user.is_admin %}
-<div class="mb-3">
+
+<div class="mb-3 d-flex gap-2">
+    {% if current_user.is_admin %}
     <a href="{{ url_for('regattas.create') }}" class="btn btn-primary btn-sm">+ Add Regatta</a>
+    {% endif %}
+    <button onclick="window.print()" class="btn btn-outline-secondary btn-sm no-print">Print</button>
 </div>
-{% endif %}
 
 {% macro regatta_table(regattas, is_past) %}
 <div class="table-responsive">
@@ -50,7 +52,7 @@
                 </td>
                 <td>
                     {% for rsvp in regatta.rsvps %}
-                    <span class="crew-badge {{ rsvp.status }}" title="{{ rsvp.user.display_name }}: {{ rsvp.status }}">{{ rsvp.user.initials }}</span>
+                    <span class="crew-badge {{ rsvp.status }}" title="{{ rsvp.user.display_name }}: {{ rsvp.status }}">{{ rsvp.user.initials }}{% if rsvp.status == 'yes' %}&#10003;{% elif rsvp.status == 'no' %}&#10007;{% elif rsvp.status == 'maybe' %}?{% endif %}</span>
                     {% endfor %}
                 </td>
                 {% if not is_past %}

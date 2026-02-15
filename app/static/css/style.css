@@ -25,3 +25,45 @@
     display: inline-block;
     margin-right: 4px;
 }
+
+/* Print styles */
+@media print {
+    .no-print,
+    .navbar,
+    .alert,
+    select[name="status"],
+    form[action*="rsvp"],
+    form[action*="delete"],
+    a.btn,
+    button.btn {
+        display: none !important;
+    }
+
+    .regatta-past {
+        opacity: 0.7;
+    }
+
+    .table {
+        font-size: 0.85rem;
+    }
+
+    .container {
+        max-width: 100%;
+        padding: 0;
+    }
+
+    a {
+        text-decoration: none !important;
+        color: #000 !important;
+    }
+
+    .badge {
+        border: 1px solid #999;
+        color: #000 !important;
+        background-color: #eee !important;
+    }
+
+    .crew-badge.yes { background-color: #d1e7dd !important; }
+    .crew-badge.no { background-color: #f8d7da !important; }
+    .crew-badge.maybe { background-color: #fff3cd !important; }
+}
