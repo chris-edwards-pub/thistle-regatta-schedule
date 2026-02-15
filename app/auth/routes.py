@@ -142,6 +142,47 @@ def invite_user():
     return redirect(url_for("auth.admin_users"))
 
 
+@bp.route("/admin/users/<int:user_id>/edit", methods=["GET", "POST"])
+@login_required
+def edit_user(user_id: int):
+    if not current_user.is_admin:
+        flash("Access denied.", "error")
+        return redirect(url_for("regattas.index"))
+
+    user = db.session.get(User, user_id)
+    if not user:
+        flash("User not found.", "error")
+        return redirect(url_for("auth.admin_users"))
+
+    if request.method == "POST":
+        display_name = request.form.get("display_name", "").strip()
+        initials = request.form.get("initials", "").strip().upper()
+        email = request.form.get("email", "").strip().lower()
+        is_admin = request.form.get("is_admin") == "on"
+        password = request.form.get("password", "")
+
+        if not display_name or not initials or not email:
+            flash("Name, initials, and email are required.", "error")
+        elif len(initials) < 2 or len(initials) > 3:
+            flash("Initials must be 2-3 characters.", "error")
+        elif email != user.email and User.query.filter_by(email=email).first():
+            flash("That email is already in use.", "error")
+        elif password and len(password) < 6:
+            flash("Password must be at least 6 characters.", "error")
+        else:
+            user.display_name = display_name
+            user.initials = initials
+            user.email = email
+            user.is_admin = is_admin
+            if password:
+                user.set_password(password)
+            db.session.commit()
+            flash(f"User '{display_name}' updated.", "success")
+            return redirect(url_for("auth.admin_users"))
+
+    return render_template("edit_user.html", user=user)
+
+
 @bp.route("/admin/users/<int:user_id>/delete", methods=["POST"])
 @login_required
 def delete_user(user_id: int):

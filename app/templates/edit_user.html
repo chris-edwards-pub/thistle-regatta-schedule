@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Edit User — Thistle Regattas{% endblock %}
+{% block content %}
+<div class="row justify-content-center mt-3">
+    <div class="col-md-5">
+        <h2 class="mb-4">Edit User</h2>
+        <form method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="mb-3">
+                <label for="display_name" class="form-label">Display Name</label>
+                <input type="text" class="form-control" id="display_name" name="display_name" required value="{{ user.display_name }}">
+            </div>
+            <div class="mb-3">
+                <label for="initials" class="form-label">Initials (2-3 characters)</label>
+                <input type="text" class="form-control" id="initials" name="initials" required maxlength="3" value="{{ user.initials }}" style="text-transform: uppercase;">
+            </div>
+            <div class="mb-3">
+                <label for="email" class="form-label">Email</label>
+                <input type="email" class="form-control" id="email" name="email" required value="{{ user.email }}">
+            </div>
+            <div class="mb-3 form-check">
+                <input type="checkbox" class="form-check-input" id="is_admin" name="is_admin" {% if user.is_admin %}checked{% endif %}>
+                <label class="form-check-label" for="is_admin">Admin</label>
+            </div>
+            <hr>
+            <p class="text-muted">Leave blank to keep current password.</p>
+            <div class="mb-3">
+                <label for="password" class="form-label">New Password</label>
+                <input type="password" class="form-control" id="password" name="password" minlength="6">
+            </div>
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary">Save Changes</button>
+                <a href="{{ url_for('auth.admin_users') }}" class="btn btn-outline-secondary">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
