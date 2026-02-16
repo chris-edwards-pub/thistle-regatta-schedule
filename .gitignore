@@ -13,3 +13,4 @@ build/
 .pytest_cache/
 .mypy_cache/
 migrations/versions/__pycache__/
+.env

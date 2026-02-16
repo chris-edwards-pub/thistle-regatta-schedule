@@ -1,5 +1,18 @@
 # Version History
 
+## 0.12.0
+- Replaced broken Print button with server-side PDF generation using WeasyPrint
+- PDF button opens a clean, print-ready PDF of the regatta schedule in a new tab
+- PDF includes upcoming and past sections with crew RSVP status
+- Added WeasyPrint system dependencies to Dockerfile
+
+## 0.11.0
+- Crew RSVP sorting: Yes first, No second, Maybe last, then alphabetically within each group
+- Custom Jinja2 template filter (sort_rsvps) for consistent ordering
+- Home button in navbar
+- Version number displayed in footer on all pages
+- Location links styled black
+
 ## 0.10.0
 - RSVP symbols moved to front of initials with space (e.g. "&#10003; CE" instead of "CE&#10003;")
 - Crew initials are clickable links to crew member profile page

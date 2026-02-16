@@ -4,8 +4,9 @@ from datetime import date
 
 from urllib.parse import quote_plus
 
-from flask import current_app, flash, redirect, render_template, request, send_from_directory, url_for
+from flask import current_app, flash, make_response, redirect, render_template, request, send_from_directory, url_for
 from flask_login import current_user, login_required
+from weasyprint import HTML
 
 from app import db
 from app.models import Document, Regatta, RSVP, User
@@ -28,6 +29,33 @@ def index():
     )
     users = User.query.filter(User.invite_token.is_(None)).order_by(User.display_name).all()
     return render_template("index.html", upcoming=upcoming, past=past, users=users)
+
+
+@bp.route("/schedule.pdf")
+@login_required
+def pdf():
+    today = date.today()
+    upcoming = (
+        Regatta.query.filter(Regatta.start_date >= today)
+        .order_by(Regatta.start_date)
+        .all()
+    )
+    past = (
+        Regatta.query.filter(Regatta.start_date < today)
+        .order_by(Regatta.start_date.desc())
+        .all()
+    )
+    html_str = render_template(
+        "pdf_schedule.html",
+        upcoming=upcoming,
+        past=past,
+        generated_date=today.strftime("%B %d, %Y"),
+    )
+    pdf_bytes = HTML(string=html_str).write_pdf()
+    response = make_response(pdf_bytes)
+    response.headers["Content-Type"] = "application/pdf"
+    response.headers["Content-Disposition"] = "inline; filename=thistle-schedule.pdf"
+    return response
 
 
 @bp.route("/regattas/new", methods=["GET", "POST"])

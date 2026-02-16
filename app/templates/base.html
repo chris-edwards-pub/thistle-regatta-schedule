@@ -10,7 +10,7 @@
 <body>
     <nav class="navbar navbar-expand-sm navbar-dark bg-dark">
         <div class="container">
-            <a class="navbar-brand" href="{{ url_for('regattas.index') }}">Thistle Regattas</a>
+            <a class="navbar-brand" href="{{ url_for('regattas.index') }}">Thistle Regatta Schedule</a>
             {% if current_user.is_authenticated %}
             <div class="navbar-nav ms-auto">
                 <a class="nav-link" href="{{ url_for('regattas.index') }}">Home</a>

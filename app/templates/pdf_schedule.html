@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body {
+            font-family: sans-serif;
+            font-size: 11px;
+            margin: 20px;
+        }
+        h1 {
+            font-size: 18px;
+            margin-bottom: 4px;
+        }
+        h2 {
+            font-size: 14px;
+            margin-top: 16px;
+            margin-bottom: 6px;
+        }
+        .subtitle {
+            color: #666;
+            font-size: 10px;
+            margin-bottom: 16px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 12px;
+        }
+        th, td {
+            border: 1px solid #ccc;
+            padding: 4px 6px;
+            text-align: left;
+            vertical-align: top;
+        }
+        th {
+            background-color: #f0f0f0;
+            font-weight: bold;
+        }
+        .past-table {
+            opacity: 0.6;
+        }
+        .crew-yes { color: #0f5132; }
+        .crew-no { color: #842029; }
+        .crew-maybe { color: #664d03; }
+        .notes {
+            color: #666;
+            font-size: 10px;
+        }
+        .doc-badge {
+            display: inline-block;
+            background-color: #e0e0e0;
+            border-radius: 3px;
+            padding: 1px 4px;
+            font-size: 9px;
+            margin-right: 2px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Thistle Regatta Schedule</h1>
+    <div class="subtitle">Generated {{ generated_date }}</div>
+
+    {% macro regatta_rows(regattas) %}
+    {% for regatta in regattas %}
+    <tr>
+        <td style="white-space: nowrap;">
+            {{ regatta.start_date.strftime('%b %d') }}{% if regatta.end_date %} – {{ regatta.end_date.strftime('%b %d') }}{% endif %}, {{ regatta.start_date.strftime('%Y') }}
+        </td>
+        <td>
+            <strong>{{ regatta.name }}</strong>
+            {% if regatta.notes %}
+            <br><span class="notes">{{ regatta.notes }}</span>
+            {% endif %}
+        </td>
+        <td>{{ regatta.location }}</td>
+        <td>
+            {% for doc in regatta.documents %}
+            <span class="doc-badge">{{ doc.doc_type }}</span>
+            {% endfor %}
+        </td>
+        <td>
+            {% for rsvp in regatta.rsvps|sort_rsvps %}
+            <span class="crew-{{ rsvp.status }}">{% if rsvp.status == 'yes' %}&#10003;{% elif rsvp.status == 'no' %}&#10007;{% elif rsvp.status == 'maybe' %}?{% endif %} {{ rsvp.user.initials }}</span>
+            {% endfor %}
+        </td>
+    </tr>
+    {% endfor %}
+    {% endmacro %}
+
+    {% if upcoming %}
+    <h2>Upcoming</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Date(s)</th>
+                <th>Regatta</th>
+                <th>Location</th>
+                <th>Docs</th>
+                <th>Crew</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{ regatta_rows(upcoming) }}
+        </tbody>
+    </table>
+    {% endif %}
+
+    {% if past %}
+    <h2>Past</h2>
+    <table class="past-table">
+        <thead>
+            <tr>
+                <th>Date(s)</th>
+                <th>Regatta</th>
+                <th>Location</th>
+                <th>Docs</th>
+                <th>Crew</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{ regatta_rows(past) }}
+        </tbody>
+    </table>
+    {% endif %}
+</body>
+</html>
