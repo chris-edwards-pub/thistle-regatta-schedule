@@ -185,250 +185,180 @@ gh secret list
 
 ---
 
-## AWS Lightsail Deployment
+## Infrastructure (Terraform)
 
-### Option A: Lightsail Container Service (Recommended)
+Infrastructure is managed with Terraform in the `terraform/` directory. Terraform
+provisions a Lightsail instance running Amazon Linux 2023 with Docker Compose.
 
-This deploys your containers as a managed service — no EC2 instance to maintain.
+**Resources provisioned:**
+- Lightsail instance (`micro_3_0` — $5/mo, 1GB RAM)
+- Static IP address (free when attached)
+- Firewall rules (ports 22, 80, 443)
+- SSH key pair for deployment
 
-#### 1. Install AWS CLI and Lightsail plugin
+### First-time setup
 
-```bash
-# Install AWS CLI if not already installed
-brew install awscli
+Complete the [CI/CD Setup](#cicd-setup-github-actions--terraform) section above first.
 
-# Install the Lightsail control plugin
-brew install aws/tap/lightsailctl
-```
-
-#### 2. Create a Lightsail container service
-
-```bash
-aws lightsail create-container-service \
-  --service-name thistle-regattas \
-  --power nano \
-  --scale 1
-```
-
-The `nano` power is $7/month and is plenty for this app.
-
-#### 3. Build and push the web image
+#### 1. Create the S3 state bucket
 
 ```bash
-# Build the image
-docker build -t thistle-web .
+aws s3api create-bucket \
+  --bucket thistle-regatta-tfstate \
+  --region us-east-1
 
-# Push to Lightsail
-aws lightsail push-container-image \
-  --service-name thistle-regattas \
-  --label web \
-  --image thistle-web
+aws s3api put-bucket-versioning \
+  --bucket thistle-regatta-tfstate \
+  --versioning-configuration Status=Enabled
+
+aws s3api put-public-access-block \
+  --bucket thistle-regatta-tfstate \
+  --public-access-block-configuration \
+    BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
 ```
 
-Note the image name returned (e.g., `:thistle-regattas.web.1`).
-
-#### 4. Create a MySQL database
-
-For Lightsail containers, you need an external database. Use Lightsail's managed database:
+#### 2. Generate SSH key pair
 
 ```bash
-aws lightsail create-relational-database \
-  --relational-database-name thistle-db \
-  --relational-database-blueprint-id mysql_8_0 \
-  --relational-database-bundle-id micro_2_0 \
-  --master-database-name regatta \
-  --master-username regatta \
-  --master-user-password <your-db-password>
+ssh-keygen -t ed25519 -C "thistle-regatta-deploy" \
+  -f ~/.ssh/thistle-regatta-deploy -N ""
 ```
 
-The `micro_2_0` bundle is $15/month. Alternatively, run MySQL inside the container (not recommended for production data durability).
-
-Get the database endpoint:
+#### 3. Store secrets in GitHub
 
 ```bash
-aws lightsail get-relational-database --relational-database-name thistle-db \
-  --query 'relationalDatabase.masterEndpoint.address' --output text
+# SSH keys
+gh secret set LIGHTSAIL_SSH_PRIVATE_KEY < ~/.ssh/thistle-regatta-deploy
+gh secret set LIGHTSAIL_SSH_PUBLIC_KEY < ~/.ssh/thistle-regatta-deploy.pub
+
+# Repository URL
+gh secret set REPO_URL --body "https://github.com/<owner>/<repo>.git"
+
+# App secrets
+gh secret set SECRET_KEY --body "$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
+gh secret set MYSQL_ROOT_PASSWORD --body "$(python3 -c 'import secrets; print(secrets.token_hex(16))')"
+gh secret set MYSQL_DATABASE --body "regatta"
+gh secret set MYSQL_USER --body "regatta"
+gh secret set MYSQL_PASSWORD --body "$(python3 -c 'import secrets; print(secrets.token_hex(16))')"
 ```
 
-#### 5. Deploy the container
-
-Create a `lightsail-deploy.json` file:
-
-```json
-{
-  "serviceName": "thistle-regattas",
-  "containers": {
-    "web": {
-      "image": ":thistle-regattas.web.1",
-      "ports": {
-        "8000": "HTTP"
-      },
-      "environment": {
-        "SECRET_KEY": "<your-secret-key>",
-        "DATABASE_URL": "mysql+pymysql://regatta:<db-password>@<db-endpoint>:3306/regatta",
-        "UPLOAD_FOLDER": "/app/uploads"
-      }
-    }
-  },
-  "publicEndpoint": {
-    "containerName": "web",
-    "containerPort": 8000,
-    "healthCheck": {
-      "path": "/login"
-    }
-  }
-}
-```
-
-Deploy:
+#### 4. Run Terraform
 
 ```bash
-aws lightsail create-container-service-deployment \
-  --cli-input-json file://lightsail-deploy.json
+cd terraform
+terraform init
+terraform apply \
+  -var "ssh_public_key=$(cat ~/.ssh/thistle-regatta-deploy.pub)" \
+  -var "repo_url=https://github.com/<owner>/<repo>.git"
 ```
 
-#### 6. Set up custom domain
-
-1. In the Lightsail console, go to your container service
-2. Under **Custom domains**, click **Create certificate**
-3. Enter `edwards.pub` (and `www.edwards.pub` if desired)
-4. Validate via DNS (add the CNAME records shown)
-5. Once validated, attach the certificate
-6. Update your DNS to point `edwards.pub` to the Lightsail container service endpoint
-
-#### 7. Create admin account
+#### 5. Store the instance IP
 
 ```bash
-# Find the container ID
-aws lightsail get-container-log --service-name thistle-regattas --container-name web
-
-# SSH isn't directly available with Lightsail containers.
-# Instead, add a temporary init route or use the registration flow:
-# 1. Temporarily set INIT_ADMIN_EMAIL and INIT_ADMIN_PASSWORD env vars
-# 2. Or use Option B (EC2) for easier admin setup
+gh secret set LIGHTSAIL_HOST --body "$(terraform output -raw static_ip)"
 ```
 
-For the initial admin setup on Lightsail containers, the simplest approach is to connect to the database directly and insert the admin user, or temporarily add a setup endpoint.
+#### 6. Wait and verify
+
+The instance takes ~3 minutes to install Docker via user-data. Then verify:
+
+```bash
+STATIC_IP=$(terraform output -raw static_ip)
+ssh -i ~/.ssh/thistle-regatta-deploy ec2-user@$STATIC_IP \
+  "docker --version && docker compose version && ls ~/app"
+```
+
+#### 7. Trigger the first deploy
+
+```bash
+gh workflow run deploy.yml
+```
+
+#### 8. Get admin credentials
+
+The app auto-generates admin credentials on first boot:
+
+```bash
+ssh -i ~/.ssh/thistle-regatta-deploy ec2-user@$STATIC_IP \
+  "cd ~/app && docker compose logs web 2>&1 | grep -A 6 'INITIAL ADMIN'"
+```
+
+### Managing infrastructure
+
+After initial setup, edit files in `terraform/` and push to `master`. The Terraform
+workflow runs plan and apply automatically.
+
+To make changes locally:
+
+```bash
+cd terraform
+terraform plan \
+  -var "ssh_public_key=$(cat ~/.ssh/thistle-regatta-deploy.pub)" \
+  -var "repo_url=https://github.com/<owner>/<repo>.git"
+terraform apply \
+  -var "ssh_public_key=$(cat ~/.ssh/thistle-regatta-deploy.pub)" \
+  -var "repo_url=https://github.com/<owner>/<repo>.git"
+```
+
+To tear down everything:
+
+```bash
+cd terraform
+terraform destroy \
+  -var "ssh_public_key=$(cat ~/.ssh/thistle-regatta-deploy.pub)" \
+  -var "repo_url=https://github.com/<owner>/<repo>.git"
+```
 
 ---
 
-### Option B: Lightsail Instance (EC2-like)
+## Deployment
 
-If you prefer a traditional VM where you can SSH in and run commands:
+Every push to `master` triggers automatic deployment via GitHub Actions.
 
-#### 1. Create a Lightsail instance
+The deploy workflow SSHes into the Lightsail instance, pulls the latest code,
+writes the `.env` file from GitHub Secrets, and runs `docker compose up -d --build`.
 
-- OS: Amazon Linux 2023
-- Blueprint: OS Only
-- Plan: $5/month (1GB RAM) or $10/month (2GB RAM)
-- Enable SSH
-
-#### 2. SSH in and install Docker
+### Manual deploy
 
 ```bash
-ssh -i <your-key> ec2-user@<your-instance-ip>
-
-# Install Docker
-sudo yum update -y
-sudo yum install -y docker
-sudo systemctl enable docker
-sudo systemctl start docker
-sudo usermod -aG docker ec2-user
-
-# Install Docker Compose
-sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-sudo chmod +x /usr/local/bin/docker-compose
-
-# Log out and back in for group changes
-exit
+gh workflow run deploy.yml
 ```
 
-#### 3. Deploy the app
+### Check deploy status
 
 ```bash
-ssh ec2-user@<your-instance-ip>
-
-git clone <your-repo-url>
-cd thistle-regatta-schedule
-cp .env.example .env
-# Edit .env with production values (real SECRET_KEY, strong DB password)
-
-docker compose up -d --build
-docker compose exec web flask create-admin
+gh run list --workflow=deploy.yml
 ```
 
-#### 4. Set up HTTPS with Let's Encrypt
-
-Update `nginx.conf` for your domain, then:
+### SSH into the instance
 
 ```bash
-# Install certbot on the host
-sudo yum install -y certbot
-
-# Stop nginx temporarily
-docker compose stop nginx
-
-# Get certificate
-sudo certbot certonly --standalone -d edwards.pub
-
-# Update nginx.conf to use SSL (see below)
-# Restart
-docker compose up -d
+ssh -i ~/.ssh/thistle-regatta-deploy ec2-user@<STATIC_IP>
+cd ~/app
+docker compose ps
+docker compose logs web
 ```
-
-Updated `nginx.conf` for SSL:
-
-```nginx
-server {
-    listen 80;
-    server_name edwards.pub;
-    return 301 https://$server_name$request_uri;
-}
-
-server {
-    listen 443 ssl;
-    server_name edwards.pub;
-    client_max_body_size 10M;
-
-    ssl_certificate /etc/letsencrypt/live/edwards.pub/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/edwards.pub/privkey.pem;
-
-    location / {
-        proxy_pass http://web:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
-
-Mount the certs in `docker-compose.yml` under the nginx service:
-
-```yaml
-volumes:
-  - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-  - /etc/letsencrypt:/etc/letsencrypt:ro
-ports:
-  - "80:80"
-  - "443:443"
-```
-
-#### 5. Set up DNS
-
-Point `edwards.pub` A record to your Lightsail instance's static IP.
 
 ---
 
-## Cost Summary
+## DNS Setup
 
-| Component | Option A (Container) | Option B (Instance) |
-|-----------|---------------------|---------------------|
-| Compute | $7/mo (nano) | $5-10/mo |
-| Database | $15/mo (managed) | $0 (in Docker) |
-| **Total** | **$22/mo** | **$5-10/mo** |
+Point the `hulagirl.us` A record to the static IP from `terraform output static_ip`.
 
-Option B is significantly cheaper since the database runs inside Docker on the same instance.
+HTTPS (Let's Encrypt) can be configured as a follow-up — port 443 is already open
+in the firewall.
+
+---
+
+## Cost
+
+| Component | Monthly Cost |
+|-----------|-------------|
+| Lightsail instance (micro_3_0, 1GB RAM) | $5 |
+| Static IP (attached to instance) | $0 |
+| S3 state bucket | ~$0 |
+| GitHub Actions | $0 (free tier) |
+| **Total** | **~$5/mo** |
 
 ---
 

@@ -1,0 +1,69 @@
+name: Deploy to Lightsail
+
+on:
+  push:
+    branches: [master]
+
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  APP_DIR: /home/ec2-user/app
+  SSH_USER: ec2-user
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.LIGHTSAIL_SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.LIGHTSAIL_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Deploy application
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
+            ${{ env.SSH_USER }}@${{ secrets.LIGHTSAIL_HOST }} << 'DEPLOY_SCRIPT'
+          set -euo pipefail
+
+          cd $HOME/app
+
+          # Pull latest code
+          git fetch origin master
+          git reset --hard origin/master
+
+          # Write .env file
+          cat > .env << ENVFILE
+          SECRET_KEY=${{ secrets.SECRET_KEY }}
+          DATABASE_URL=mysql+pymysql://${{ secrets.MYSQL_USER }}:${{ secrets.MYSQL_PASSWORD }}@db:3306/${{ secrets.MYSQL_DATABASE }}
+          UPLOAD_FOLDER=/app/uploads
+          MYSQL_ROOT_PASSWORD=${{ secrets.MYSQL_ROOT_PASSWORD }}
+          MYSQL_DATABASE=${{ secrets.MYSQL_DATABASE }}
+          MYSQL_USER=${{ secrets.MYSQL_USER }}
+          MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }}
+          ENVFILE
+
+          # Build and deploy
+          docker compose up -d --build --remove-orphans
+
+          # Wait for containers to start
+          echo "Waiting for containers..."
+          sleep 10
+
+          # Show status
+          docker compose ps
+
+          echo "Deploy complete!"
+          DEPLOY_SCRIPT
+
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
