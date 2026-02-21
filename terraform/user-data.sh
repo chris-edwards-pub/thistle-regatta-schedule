@@ -14,8 +14,14 @@ systemctl enable docker
 systemctl start docker
 usermod -aG docker ec2-user
 
-# Install Docker Compose plugin
+# Install Docker Buildx and Compose plugins
 mkdir -p /usr/local/lib/docker/cli-plugins
+
+BUILDX_VERSION=0.21.1
+curl -SL "https://github.com/docker/buildx/releases/download/v${BUILDX_VERSION}/buildx-v${BUILDX_VERSION}.linux-amd64" \
+  -o /usr/local/lib/docker/cli-plugins/docker-buildx
+chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx
+
 curl -SL "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" \
   -o /usr/local/lib/docker/cli-plugins/docker-compose
 chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
