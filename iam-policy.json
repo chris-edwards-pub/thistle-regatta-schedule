@@ -8,6 +8,20 @@
       "Resource": "*"
     },
     {
+      "Sid": "Route53DNS",
+      "Effect": "Allow",
+      "Action": [
+        "route53:GetHostedZone",
+        "route53:ListResourceRecordSets",
+        "route53:ChangeResourceRecordSets",
+        "route53:GetChange"
+      ],
+      "Resource": [
+        "arn:aws:route53:::hostedzone/Z08528331MMLNEIHD9QRS",
+        "arn:aws:route53:::change/*"
+      ]
+    },
+    {
       "Sid": "TerraformStateBucket",
       "Effect": "Allow",
       "Action": [

@@ -29,6 +29,10 @@ resource "aws_lightsail_static_ip" "app" {
 resource "aws_lightsail_static_ip_attachment" "app" {
   static_ip_name = aws_lightsail_static_ip.app.name
   instance_name  = aws_lightsail_instance.app.name
+
+  lifecycle {
+    replace_triggered_by = [aws_lightsail_instance.app.id]
+  }
 }
 
 # Firewall: allow SSH (22), HTTP (80), HTTPS (443)
@@ -52,4 +56,13 @@ resource "aws_lightsail_instance_public_ports" "app" {
     from_port = 443
     to_port   = 443
   }
+}
+
+# DNS: point domain to static IP
+resource "aws_route53_record" "app" {
+  zone_id = var.route53_zone_id
+  name    = var.domain_name
+  type    = "A"
+  ttl     = 300
+  records = [aws_lightsail_static_ip.app.ip_address]
 }
