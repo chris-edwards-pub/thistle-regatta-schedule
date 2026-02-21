@@ -11,7 +11,6 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  APP_DIR: /home/ec2-user/app
   SSH_USER: ec2-user
 
 jobs:
@@ -26,12 +25,11 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.LIGHTSAIL_SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H ${{ secrets.LIGHTSAIL_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+          ssh-keyscan -H ${{ secrets.LIGHTSAIL_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
 
-      - name: Deploy application
+      - name: Write deploy script
         run: |
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
-            ${{ env.SSH_USER }}@${{ secrets.LIGHTSAIL_HOST }} << 'DEPLOY_SCRIPT'
+          cat > /tmp/deploy.sh << 'SCRIPT'
           set -euo pipefail
 
           cd $HOME/app
@@ -39,17 +37,6 @@ jobs:
           # Pull latest code
           git fetch origin master
           git reset --hard origin/master
-
-          # Write .env file
-          cat > .env << ENVFILE
-          SECRET_KEY=${{ secrets.SECRET_KEY }}
-          DATABASE_URL=mysql+pymysql://${{ secrets.MYSQL_USER }}:${{ secrets.MYSQL_PASSWORD }}@db:3306/${{ secrets.MYSQL_DATABASE }}
-          UPLOAD_FOLDER=/app/uploads
-          MYSQL_ROOT_PASSWORD=${{ secrets.MYSQL_ROOT_PASSWORD }}
-          MYSQL_DATABASE=${{ secrets.MYSQL_DATABASE }}
-          MYSQL_USER=${{ secrets.MYSQL_USER }}
-          MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }}
-          ENVFILE
 
           # Build and deploy
           docker compose up -d --build --remove-orphans
@@ -62,8 +49,27 @@ jobs:
           docker compose ps
 
           echo "Deploy complete!"
-          DEPLOY_SCRIPT
+          SCRIPT
+          chmod +x /tmp/deploy.sh
 
-      - name: Cleanup SSH key
+      - name: Write .env file
+        run: |
+          cat > /tmp/env-file << ENVFILE
+          SECRET_KEY=${{ secrets.SECRET_KEY }}
+          DATABASE_URL=mysql+pymysql://${{ secrets.MYSQL_USER }}:${{ secrets.MYSQL_PASSWORD }}@db:3306/${{ secrets.MYSQL_DATABASE }}
+          UPLOAD_FOLDER=/app/uploads
+          MYSQL_ROOT_PASSWORD=${{ secrets.MYSQL_ROOT_PASSWORD }}
+          MYSQL_DATABASE=${{ secrets.MYSQL_DATABASE }}
+          MYSQL_USER=${{ secrets.MYSQL_USER }}
+          MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }}
+          ENVFILE
+
+      - name: Deploy application
+        run: |
+          SSH_CMD="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new ${{ env.SSH_USER }}@${{ secrets.LIGHTSAIL_HOST }}"
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new /tmp/env-file ${{ env.SSH_USER }}@${{ secrets.LIGHTSAIL_HOST }}:~/app/.env
+          $SSH_CMD 'bash -s' < /tmp/deploy.sh
+
+      - name: Cleanup
         if: always()
-        run: rm -f ~/.ssh/deploy_key
+        run: rm -f ~/.ssh/deploy_key /tmp/deploy.sh /tmp/env-file
