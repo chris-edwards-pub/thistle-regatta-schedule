@@ -17,10 +17,11 @@ set +a
 DOMAIN="${DOMAIN_NAME:?DOMAIN_NAME not set in .env}"
 EMAIL="${CERTBOT_EMAIL:?CERTBOT_EMAIL not set in .env}"
 
-# Check if certificate already exists
-CERT_VOL=$(docker volume inspect "${PWD##*/}_certbot_certs" 2>/dev/null | grep -o '"Mountpoint": "[^"]*"' | cut -d'"' -f4 || true)
-if [ -n "$CERT_VOL" ] && [ -f "$CERT_VOL/live/$DOMAIN/fullchain.pem" ]; then
+# Check if certificate already exists by looking inside the certbot volume
+if docker compose run --rm -T --entrypoint sh certbot -c "test -f /etc/letsencrypt/live/$DOMAIN/fullchain.pem" 2>/dev/null; then
     echo "SSL certificate already exists for $DOMAIN, skipping."
+    # Restart nginx to ensure SSL config is active
+    docker compose restart nginx
     exit 0
 fi
 
@@ -41,6 +42,7 @@ docker compose run --rm -T --entrypoint certbot certbot \
     --email "$EMAIL" \
     --agree-tos \
     --no-eff-email \
+    --keep-existing \
     -d "$DOMAIN"
 
 echo "=== Certificate obtained! Restarting nginx with SSL... ==="
