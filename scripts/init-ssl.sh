@@ -21,7 +21,6 @@ EMAIL="${CERTBOT_EMAIL:?CERTBOT_EMAIL not set in .env}"
 # (avoids creating a new container which is slow on low-memory instances)
 if docker compose exec -T nginx test -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" 2>/dev/null; then
     echo "SSL certificate already exists for $DOMAIN, skipping."
-    docker compose restart nginx
     exit 0
 fi
 
