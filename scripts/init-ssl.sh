@@ -34,7 +34,7 @@ sleep 5
 
 # Request certificate using webroot authentication
 # Override entrypoint since the compose file sets a renewal loop entrypoint
-docker compose run --rm --entrypoint certbot certbot \
+docker compose run --rm -T --entrypoint certbot certbot \
     certonly \
     --webroot \
     --webroot-path=/var/www/certbot \
