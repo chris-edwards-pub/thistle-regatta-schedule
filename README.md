@@ -242,7 +242,16 @@ gh secret set MYSQL_USER --body "regatta"
 gh secret set MYSQL_PASSWORD --body "$(python3 -c 'import secrets; print(secrets.token_hex(16))')"
 ```
 
-#### 4. Run Terraform
+#### 4. Store GitHub Variables
+
+```bash
+gh variable set DOMAIN_NAME --body "yourdomain.com"
+gh variable set CERTBOT_EMAIL --body "you@example.com"
+gh variable set MYSQL_DATABASE --body "regatta"
+gh variable set MYSQL_USER --body "regatta"
+```
+
+#### 5. Run Terraform
 
 ```bash
 cd terraform
@@ -252,13 +261,13 @@ terraform apply \
   -var "repo_url=https://github.com/<owner>/<repo>.git"
 ```
 
-#### 5. Store the instance IP
+#### 6. Store the instance IP
 
 ```bash
-gh secret set LIGHTSAIL_HOST --body "$(terraform output -raw static_ip)"
+gh variable set LIGHTSAIL_HOST --body "$(terraform output -raw static_ip)"
 ```
 
-#### 6. Wait and verify
+#### 7. Wait and verify
 
 The instance takes ~3 minutes to install Docker via user-data. Then verify:
 
@@ -268,13 +277,13 @@ ssh -i ~/.ssh/thistle-regatta-deploy ec2-user@$STATIC_IP \
   "docker --version && docker compose version && ls ~/app"
 ```
 
-#### 7. Trigger the first deploy
+#### 8. Trigger the first deploy
 
 ```bash
 gh workflow run deploy.yml
 ```
 
-#### 8. Get admin credentials
+#### 9. Get admin credentials
 
 The app auto-generates admin credentials on first boot:
 
@@ -343,10 +352,11 @@ docker compose logs web
 
 ## DNS Setup
 
-Point the `hulagirl.us` A record to the static IP from `terraform output static_ip`.
+Point your domain's A record to the static IP from `terraform output static_ip`.
 
-HTTPS (Let's Encrypt) can be configured as a follow-up — port 443 is already open
-in the firewall.
+HTTPS is provisioned automatically on deploy via Let's Encrypt. The first deploy
+obtains the certificate; subsequent deploys reuse it. Certificates auto-renew
+every 60 days.
 
 ---
 
