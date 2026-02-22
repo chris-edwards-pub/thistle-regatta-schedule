@@ -28,9 +28,9 @@ Semantic Versioning (SemVer): `MAJOR.MINOR.PATCH`
 - Current version: `0.1.0`
 
 ## Git Workflow
-- `main` branch is production-ready
-- All new work on feature branches: `feature/<name>`
-- Merge to `main` when feature is complete and tested
+- `master` branch is production-ready — **never push directly to master**
+- All work must be on a branch: `feature/<name>` for new work, `fix/<name>` for bug fixes
+- Merge to `master` via PR when complete and tested
 - Commit messages: imperative mood, concise ("Add regatta CRUD routes")
 
 ## Testing
