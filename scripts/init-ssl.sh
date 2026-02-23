@@ -41,7 +41,6 @@ docker compose run --rm -T --entrypoint certbot certbot \
     --email "$EMAIL" \
     --agree-tos \
     --no-eff-email \
-    --keep-existing \
     -d "$DOMAIN"
 
 echo "=== Certificate obtained! Restarting nginx with SSL... ==="
