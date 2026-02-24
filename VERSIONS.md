@@ -1,5 +1,15 @@
 # Version History
 
+## 0.18.0
+- Migrate from Lightsail EC2 instance to Container Service for ephemeral deploys
+- Add Lightsail Managed MySQL (micro) — automated backups, no container to manage
+- Add Lightsail Object Storage (S3-compatible) for persistent file uploads
+- File uploads/downloads now use S3 with presigned URLs instead of local disk
+- New Terraform resources: container service, managed database, object storage, SSL cert
+- Rewrite deploy workflow: AWS CLI container deployment replaces SSH-based deploys
+- Remove nginx, certbot, SSH key pair, static IP — container service handles HTTPS
+- Simplify docker-compose.yml to web + db for local development only
+
 ## 0.17.1
 - Update README with GHCR deployment docs, rollback instructions, and emergency fallback
 

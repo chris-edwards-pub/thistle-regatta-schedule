@@ -34,6 +34,16 @@
         "arn:aws:s3:::race-crew-tfstate",
         "arn:aws:s3:::race-crew-tfstate/*"
       ]
+    },
+    {
+      "Sid": "UploadsBucketAccess",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:GetObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": "arn:aws:s3:::race-crew-network-uploads/*"
     }
   ]
 }

@@ -10,3 +10,5 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     MAX_CONTENT_LENGTH = 10 * 1024 * 1024  # 10MB max upload
     UPLOAD_FOLDER = os.environ.get("UPLOAD_FOLDER", "uploads")
+    BUCKET_NAME = os.environ.get("BUCKET_NAME", "")
+    AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")

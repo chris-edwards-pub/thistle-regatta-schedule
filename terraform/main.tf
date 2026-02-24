@@ -1,72 +1,106 @@
-# SSH key pair for GitHub Actions to connect
-resource "aws_lightsail_key_pair" "deploy" {
-  name       = "${var.instance_name}-deploy-key"
-  public_key = var.ssh_public_key
-}
+# --- Container Service ---
 
-# The Lightsail instance
-resource "aws_lightsail_instance" "app" {
-  name              = var.instance_name
-  availability_zone = var.availability_zone
-  blueprint_id      = var.blueprint_id
-  bundle_id         = var.bundle_id
-  key_pair_name     = aws_lightsail_key_pair.deploy.name
-  user_data = templatefile("${path.module}/user-data.sh", {
-    repo_url = var.repo_url
-  })
+resource "aws_lightsail_container_service" "app" {
+  name  = var.instance_name
+  power = var.container_power
+  scale = var.container_scale
 
   tags = {
     Project = "race-crew-network"
   }
+}
 
-  lifecycle {
-    replace_triggered_by = [aws_lightsail_key_pair.deploy.id]
+# --- SSL Certificate ---
+
+resource "aws_lightsail_certificate" "app" {
+  name        = "${var.instance_name}-cert"
+  domain_name = var.domain_name
+}
+
+# DNS validation record for the SSL certificate
+resource "aws_route53_record" "cert_validation" {
+  zone_id = var.route53_zone_id
+  name    = tolist(aws_lightsail_certificate.app.domain_validation_options)[0].resource_record_name
+  type    = tolist(aws_lightsail_certificate.app.domain_validation_options)[0].resource_record_type
+  records = [tolist(aws_lightsail_certificate.app.domain_validation_options)[0].resource_record_value]
+  ttl     = 60
+}
+
+# --- Managed MySQL Database ---
+
+resource "aws_lightsail_database" "app" {
+  relational_database_name = "${var.instance_name}-db"
+  availability_zone        = var.availability_zone
+  master_database_name     = var.db_name
+  master_username          = var.db_username
+  master_password          = var.db_password
+  blueprint_id             = "mysql_8_0"
+  bundle_id                = var.db_bundle_id
+  publicly_accessible      = true
+
+  tags = {
+    Project = "race-crew-network"
   }
 }
 
-# Static IP so the address survives instance stop/start
-resource "aws_lightsail_static_ip" "app" {
-  name = "${var.instance_name}-ip"
-}
+# --- Object Storage (S3-compatible) ---
 
-# Attach static IP to instance
-resource "aws_lightsail_static_ip_attachment" "app" {
-  static_ip_name = aws_lightsail_static_ip.app.name
-  instance_name  = aws_lightsail_instance.app.name
+resource "aws_lightsail_bucket" "uploads" {
+  name      = "${var.instance_name}-uploads"
+  bundle_id = "small_1_0"
 
-  lifecycle {
-    replace_triggered_by = [aws_lightsail_instance.app.id]
+  tags = {
+    Project = "race-crew-network"
   }
 }
 
-# Firewall: allow SSH (22), HTTP (80), HTTPS (443)
-resource "aws_lightsail_instance_public_ports" "app" {
-  instance_name = aws_lightsail_instance.app.name
+resource "aws_lightsail_bucket_access_key" "app" {
+  bucket_name = aws_lightsail_bucket.uploads.name
+}
 
-  port_info {
-    protocol  = "tcp"
-    from_port = 22
-    to_port   = 22
+# --- Container Deployment ---
+
+resource "aws_lightsail_container_service_deployment_version" "app" {
+  service_name = aws_lightsail_container_service.app.name
+
+  container {
+    container_name = "web"
+    image          = var.ghcr_image
+
+    environment = {
+      DATABASE_URL          = "mysql+pymysql://${var.db_username}:${var.db_password}@${aws_lightsail_database.app.master_endpoint_address}:${aws_lightsail_database.app.master_endpoint_port}/${var.db_name}"
+      SECRET_KEY            = var.secret_key
+      UPLOAD_FOLDER         = "/app/uploads"
+      BUCKET_NAME           = aws_lightsail_bucket.uploads.name
+      AWS_ACCESS_KEY_ID     = aws_lightsail_bucket_access_key.app.access_key_id
+      AWS_SECRET_ACCESS_KEY = aws_lightsail_bucket_access_key.app.secret_access_key
+      AWS_REGION            = var.aws_region
+    }
+
+    ports = {
+      8000 = "HTTP"
+    }
   }
 
-  port_info {
-    protocol  = "tcp"
-    from_port = 80
-    to_port   = 80
-  }
+  public_endpoint {
+    container_name = "web"
+    container_port = 8000
 
-  port_info {
-    protocol  = "tcp"
-    from_port = 443
-    to_port   = 443
+    health_check {
+      path             = "/"
+      success_codes    = "200-499"
+      interval_seconds = 30
+      timeout_seconds  = 5
+    }
   }
 }
 
-# DNS: point domain to static IP
+# --- DNS ---
+
 resource "aws_route53_record" "app" {
   zone_id = var.route53_zone_id
   name    = var.domain_name
-  type    = "A"
+  type    = "CNAME"
   ttl     = 300
-  records = [aws_lightsail_static_ip.app.ip_address]
+  records = [aws_lightsail_container_service.app.url]
 }

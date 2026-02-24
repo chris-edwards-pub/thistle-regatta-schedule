@@ -1,14 +1,30 @@
-output "instance_name" {
-  description = "Lightsail instance name"
-  value       = aws_lightsail_instance.app.name
+output "container_service_url" {
+  description = "Public URL of the container service"
+  value       = aws_lightsail_container_service.app.url
 }
 
-output "static_ip" {
-  description = "Static IP address — point racecrew.net A record here"
-  value       = aws_lightsail_static_ip.app.ip_address
+output "database_endpoint" {
+  description = "MySQL host address"
+  value       = aws_lightsail_database.app.master_endpoint_address
 }
 
-output "instance_username" {
-  description = "Default SSH username for Amazon Linux 2023"
-  value       = "ec2-user"
+output "database_port" {
+  description = "MySQL port"
+  value       = aws_lightsail_database.app.master_endpoint_port
+}
+
+output "bucket_name" {
+  description = "Object storage bucket name"
+  value       = aws_lightsail_bucket.uploads.name
+}
+
+output "bucket_access_key_id" {
+  description = "Access key ID for the uploads bucket"
+  value       = aws_lightsail_bucket_access_key.app.access_key_id
+}
+
+output "bucket_secret_access_key" {
+  description = "Secret access key for the uploads bucket"
+  value       = aws_lightsail_bucket_access_key.app.secret_access_key
+  sensitive   = true
 }

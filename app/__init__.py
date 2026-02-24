@@ -4,7 +4,7 @@ from flask_migrate import Migrate
 from flask_sqlalchemy import SQLAlchemy
 from flask_wtf.csrf import CSRFProtect
 
-__version__ = "0.17.1"
+__version__ = "0.18.0"
 
 db = SQLAlchemy()
 migrate = Migrate()
@@ -41,6 +41,8 @@ def create_app():
     @app.template_filter("sort_rsvps")
     def sort_rsvps(rsvps):
         order = {"yes": 0, "no": 1, "maybe": 2}
-        return sorted(rsvps, key=lambda r: (order.get(r.status, 3), r.user.display_name))
+        return sorted(
+            rsvps, key=lambda r: (order.get(r.status, 3), r.user.display_name)
+        )
 
     return app
