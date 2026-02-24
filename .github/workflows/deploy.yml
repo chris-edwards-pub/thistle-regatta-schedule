@@ -17,8 +17,6 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  SSH_USER: ec2-user
-  DEPLOY_BRANCH: ${{ inputs.branch || 'master' }}
   REGISTRY: ghcr.io
   IMAGE_NAME: chris-edwards-pub/race-crew-network
 
@@ -73,69 +71,39 @@ jobs:
     needs: build-and-push
 
     steps:
-      - name: Configure SSH
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Deploy to Lightsail Container Service
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.LIGHTSAIL_SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H ${{ vars.LIGHTSAIL_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
-
-      - name: Write deploy script
-        run: |
-          cat > /tmp/deploy.sh << 'SCRIPT'
-          set -euo pipefail
-
-          cd $HOME/app
-
-          # Pull latest code
-          BRANCH="${DEPLOY_BRANCH}"
-          git fetch origin "$BRANCH"
-          git reset --hard "origin/$BRANCH"
-
-          # Pull pre-built image from GHCR
-          docker compose pull web
-
-          # Deploy with new image
-          docker compose up -d --remove-orphans
-
-          # Wait for containers to start
-          echo "Waiting for containers..."
-          sleep 10
-
-          # Show status
-          docker compose ps
-
-          echo "Deploy complete!"
-          SCRIPT
-          chmod +x /tmp/deploy.sh
-
-      - name: Write .env file
-        run: |
-          cat > /tmp/env-file << ENVFILE
-          SECRET_KEY=${{ secrets.SECRET_KEY }}
-          DATABASE_URL=mysql+pymysql://${{ vars.MYSQL_USER }}:${{ secrets.MYSQL_PASSWORD }}@db:3306/${{ vars.MYSQL_DATABASE }}
-          UPLOAD_FOLDER=/app/uploads
-          MYSQL_ROOT_PASSWORD=${{ secrets.MYSQL_ROOT_PASSWORD }}
-          MYSQL_DATABASE=${{ vars.MYSQL_DATABASE }}
-          MYSQL_USER=${{ vars.MYSQL_USER }}
-          MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }}
-          DOMAIN_NAME=${{ vars.DOMAIN_NAME }}
-          CERTBOT_EMAIL=${{ vars.CERTBOT_EMAIL }}
-          ENVFILE
-
-      - name: Deploy application
-        run: |
-          SSH_OPTS="-i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=15 -o ServerAliveCountMax=20"
-          SSH_CMD="ssh $SSH_OPTS ${{ env.SSH_USER }}@${{ vars.LIGHTSAIL_HOST }}"
-          scp $SSH_OPTS /tmp/env-file ${{ env.SSH_USER }}@${{ vars.LIGHTSAIL_HOST }}:~/app/.env
-          $SSH_CMD "DEPLOY_BRANCH=${{ env.DEPLOY_BRANCH }} bash -s" < /tmp/deploy.sh
-
-      - name: Initialize SSL certificate
-        run: |
-          SSH_OPTS="-i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=15 -o ServerAliveCountMax=20"
-          SSH_CMD="ssh $SSH_OPTS ${{ env.SSH_USER }}@${{ vars.LIGHTSAIL_HOST }}"
-          $SSH_CMD 'bash ~/app/scripts/init-ssl.sh ~/app'
-
-      - name: Cleanup
-        if: always()
-        run: rm -f ~/.ssh/deploy_key /tmp/deploy.sh /tmp/env-file
+          aws lightsail create-container-service-deployment \
+            --service-name ${{ vars.CONTAINER_SERVICE_NAME }} \
+            --containers '{
+              "web": {
+                "image": "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}",
+                "ports": {"8000": "HTTP"},
+                "environment": {
+                  "DATABASE_URL": "mysql+pymysql://${{ vars.MYSQL_USER }}:${{ secrets.MYSQL_PASSWORD }}@${{ vars.DB_ENDPOINT }}/${{ vars.MYSQL_DATABASE }}",
+                  "SECRET_KEY": "${{ secrets.SECRET_KEY }}",
+                  "UPLOAD_FOLDER": "/app/uploads",
+                  "BUCKET_NAME": "${{ vars.BUCKET_NAME }}",
+                  "AWS_ACCESS_KEY_ID": "${{ secrets.BUCKET_ACCESS_KEY_ID }}",
+                  "AWS_SECRET_ACCESS_KEY": "${{ secrets.BUCKET_SECRET_ACCESS_KEY }}",
+                  "AWS_REGION": "us-east-1"
+                }
+              }
+            }' \
+            --public-endpoint '{
+              "containerName": "web",
+              "containerPort": 8000,
+              "healthCheck": {
+                "path": "/",
+                "successCodes": "200-499",
+                "intervalSeconds": 30,
+                "timeoutSeconds": 5
+              }
+            }'

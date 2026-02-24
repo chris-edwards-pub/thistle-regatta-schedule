@@ -1,15 +1,15 @@
 import os
 import uuid
 from datetime import date
-
 from urllib.parse import quote_plus
 
-from flask import current_app, flash, make_response, redirect, render_template, request, send_from_directory, url_for
+from flask import (flash, make_response, redirect, render_template, request,
+                   url_for)
 from flask_login import current_user, login_required
 from weasyprint import HTML
 
-from app import db
-from app.models import Document, Regatta, RSVP, User
+from app import db, storage
+from app.models import RSVP, Document, Regatta, User
 from app.regattas import bp
 
 
@@ -27,7 +27,9 @@ def index():
         .order_by(Regatta.start_date.desc())
         .all()
     )
-    users = User.query.filter(User.invite_token.is_(None)).order_by(User.display_name).all()
+    users = (
+        User.query.filter(User.invite_token.is_(None)).order_by(User.display_name).all()
+    )
     return render_template("index.html", upcoming=upcoming, past=past, users=users)
 
 
@@ -138,10 +140,7 @@ def download_doc(doc_id: int):
     if doc.url:
         return redirect(doc.url)
 
-    upload_folder = current_app.config["UPLOAD_FOLDER"]
-    return send_from_directory(
-        upload_folder, doc.stored_filename, download_name=doc.original_filename
-    )
+    return redirect(storage.get_file_url(doc.stored_filename))
 
 
 @bp.route("/regattas/<int:regatta_id>/upload", methods=["POST"])
@@ -176,9 +175,7 @@ def upload_doc(regatta_id: int):
         ext = os.path.splitext(file.filename)[1].lower()
         stored_filename = f"{uuid.uuid4().hex}{ext}"
 
-        upload_folder = current_app.config["UPLOAD_FOLDER"]
-        os.makedirs(upload_folder, exist_ok=True)
-        file.save(os.path.join(upload_folder, stored_filename))
+        storage.upload_file(file, stored_filename)
 
         doc = Document(
             regatta_id=regatta_id,
@@ -210,12 +207,9 @@ def delete_doc(doc_id: int):
 
     regatta_id = doc.regatta_id
 
-    # Delete file from disk if it's a file-based document
+    # Delete file from S3 if it's a file-based document
     if doc.stored_filename:
-        upload_folder = current_app.config["UPLOAD_FOLDER"]
-        filepath = os.path.join(upload_folder, doc.stored_filename)
-        if os.path.exists(filepath):
-            os.remove(filepath)
+        storage.delete_file(doc.stored_filename)
 
     db.session.delete(doc)
     db.session.commit()
@@ -252,7 +246,9 @@ def _save_regatta(regatta: Regatta | None):
         regatta.location_url = location_url
     else:
         # Auto-generate Google Maps search link from location text
-        regatta.location_url = f"https://www.google.com/maps/search/{quote_plus(location)}"
+        regatta.location_url = (
+            f"https://www.google.com/maps/search/{quote_plus(location)}"
+        )
     regatta.start_date = start_date
     regatta.end_date = end_date
     regatta.notes = notes or None

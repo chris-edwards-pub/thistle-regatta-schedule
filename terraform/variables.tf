@@ -1,42 +1,19 @@
 variable "aws_region" {
-  description = "AWS region for Lightsail instance"
+  description = "AWS region for Lightsail resources"
   type        = string
   default     = "us-east-1"
 }
 
 variable "instance_name" {
-  description = "Name for the Lightsail instance"
+  description = "Base name for Lightsail resources"
   type        = string
   default     = "race-crew-network"
 }
 
 variable "availability_zone" {
-  description = "Availability zone for the instance"
+  description = "Availability zone for the database"
   type        = string
   default     = "us-east-1a"
-}
-
-variable "blueprint_id" {
-  description = "Lightsail blueprint (OS image)"
-  type        = string
-  default     = "amazon_linux_2023"
-}
-
-variable "bundle_id" {
-  description = "Lightsail instance bundle (size/price)"
-  type        = string
-  default     = "small_3_0"
-}
-
-variable "ssh_public_key" {
-  description = "SSH public key for instance access"
-  type        = string
-  sensitive   = true
-}
-
-variable "repo_url" {
-  description = "Git repository URL to clone on the instance"
-  type        = string
 }
 
 variable "domain_name" {
@@ -47,4 +24,52 @@ variable "domain_name" {
 variable "route53_zone_id" {
   description = "Route 53 hosted zone ID for the domain"
   type        = string
+}
+
+variable "db_password" {
+  description = "Master password for the managed MySQL database"
+  type        = string
+  sensitive   = true
+}
+
+variable "db_username" {
+  description = "Master username for the managed MySQL database"
+  type        = string
+  default     = "racecrew"
+}
+
+variable "db_name" {
+  description = "Database name for the managed MySQL database"
+  type        = string
+  default     = "racecrew"
+}
+
+variable "secret_key" {
+  description = "Flask SECRET_KEY for session signing"
+  type        = string
+  sensitive   = true
+}
+
+variable "container_power" {
+  description = "Lightsail container service power (nano, micro, small, etc.)"
+  type        = string
+  default     = "micro"
+}
+
+variable "container_scale" {
+  description = "Number of container instances to run"
+  type        = number
+  default     = 1
+}
+
+variable "ghcr_image" {
+  description = "GHCR image to deploy"
+  type        = string
+  default     = "ghcr.io/chris-edwards-pub/race-crew-network:latest"
+}
+
+variable "db_bundle_id" {
+  description = "Lightsail database bundle (size/price)"
+  type        = string
+  default     = "micro_1_0"
 }

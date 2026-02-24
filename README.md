@@ -6,7 +6,7 @@ A simple web app for organizing sailboat regattas. Track dates, locations, NOR/S
 
 - Single-page regatta table sorted by date
 - Location links to Google Maps
-- Upload/download NOR and SI PDFs
+- Upload/download NOR and SI PDFs (stored in S3)
 - Crew RSVP (Yes / No / Maybe) with color-coded initials
 - Admin: add/edit/delete regattas, upload documents, invite crew
 - Crew: view schedule, download docs, set RSVP
@@ -15,12 +15,29 @@ A simple web app for organizing sailboat regattas. Track dates, locations, NOR/S
 ## Tech Stack
 
 - Python 3.11, Flask, SQLAlchemy, Flask-Login
-- MySQL 8
-- Gunicorn + Nginx
-- Docker Compose
+- MySQL 8 (Lightsail Managed Database in production)
+- Gunicorn
+- Docker Compose (local dev)
 - Bootstrap 5
 - GitHub Container Registry (GHCR) for container images
 - GitHub Actions for CI/CD
+
+## Architecture
+
+```
+Production:
+  Lightsail Container Service (Micro) ─── Lightsail Managed MySQL (Micro)
+         │                                         │
+         ├── GHCR image (Flask/Gunicorn)           └── Automated backups
+         ├── Built-in HTTPS + custom domain
+         └── Lightsail Object Storage (S3) ── file uploads
+
+Local Development:
+  docker-compose up
+         │
+         ├── web (Flask/Gunicorn)
+         └── db (MySQL 8)
+```
 
 ---
 
@@ -51,10 +68,9 @@ python3 -c "import secrets; print(secrets.token_hex(32))"
 docker compose up --build
 ```
 
-This starts 3 containers:
-- **web** — Flask app on Gunicorn (port 8000 internal)
+This starts 2 containers:
+- **web** — Flask app on Gunicorn (port 8000 internal, port 80 exposed)
 - **db** — MySQL 8 (port 3306 internal)
-- **nginx** — Reverse proxy (port 80 exposed)
 
 The app automatically runs database migrations on startup.
 
@@ -110,37 +126,7 @@ aws iam create-user --user-name race-crew-deploy
 
 ### 2. Create IAM policy
 
-The policy file (`iam-policy.json`) is included in the repo root:
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Sid": "LightsailFullAccess",
-      "Effect": "Allow",
-      "Action": "lightsail:*",
-      "Resource": "*"
-    },
-    {
-      "Sid": "TerraformStateBucket",
-      "Effect": "Allow",
-      "Action": [
-        "s3:GetObject",
-        "s3:PutObject",
-        "s3:DeleteObject",
-        "s3:ListBucket"
-      ],
-      "Resource": [
-        "arn:aws:s3:::race-crew-tfstate",
-        "arn:aws:s3:::race-crew-tfstate/*"
-      ]
-    }
-  ]
-}
-```
-
-Create the policy:
+The policy file (`iam-policy.json`) is included in the repo root. Create the policy:
 
 ```bash
 aws iam create-policy \
@@ -190,13 +176,15 @@ gh secret list
 ## Infrastructure (Terraform)
 
 Infrastructure is managed with Terraform in the `terraform/` directory. Terraform
-provisions a Lightsail instance running Amazon Linux 2023 with Docker Compose.
+provisions Lightsail Container Service, Managed MySQL, Object Storage, and DNS.
 
 **Resources provisioned:**
-- Lightsail instance (`small_3_0` — $10/mo, 2GB RAM)
-- Static IP address (free when attached)
-- Firewall rules (ports 22, 80, 443)
-- SSH key pair for deployment
+- Lightsail Container Service (`micro` — $10/mo)
+- Lightsail Managed MySQL (`micro_1_0` — $15/mo, automated backups)
+- Lightsail Object Storage (`small_1_0` — $1/mo, file uploads)
+- SSL certificate with DNS validation
+- Route 53 DNS records (CNAME to container service, cert validation)
+- Bucket access key for app-to-S3 authentication
 
 ### First-time setup
 
@@ -219,79 +207,61 @@ aws s3api put-public-access-block \
     BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
 ```
 
-#### 2. Generate SSH key pair
+#### 2. Store secrets in GitHub
 
 ```bash
-ssh-keygen -t ed25519 -C "race-crew-deploy" \
-  -f ~/.ssh/race-crew-deploy -N ""
-```
-
-#### 3. Store secrets in GitHub
-
-```bash
-# SSH keys
-gh secret set LIGHTSAIL_SSH_PRIVATE_KEY < ~/.ssh/race-crew-deploy
-gh secret set LIGHTSAIL_SSH_PUBLIC_KEY < ~/.ssh/race-crew-deploy.pub
-
-# Repository URL
-gh secret set REPO_URL --body "https://github.com/<owner>/<repo>.git"
-
 # App secrets
 gh secret set SECRET_KEY --body "$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
-gh secret set MYSQL_ROOT_PASSWORD --body "$(python3 -c 'import secrets; print(secrets.token_hex(16))')"
-gh secret set MYSQL_DATABASE --body "racecrew"
-gh secret set MYSQL_USER --body "racecrew"
 gh secret set MYSQL_PASSWORD --body "$(python3 -c 'import secrets; print(secrets.token_hex(16))')"
 ```
 
-#### 4. Store GitHub Variables
+#### 3. Store GitHub Variables
 
 ```bash
 gh variable set DOMAIN_NAME --body "racecrew.net"
-gh variable set CERTBOT_EMAIL --body "you@example.com"
 gh variable set MYSQL_DATABASE --body "racecrew"
 gh variable set MYSQL_USER --body "racecrew"
 ```
 
-#### 5. Run Terraform
+#### 4. Run Terraform
 
 ```bash
 cd terraform
 terraform init
 terraform apply \
-  -var "ssh_public_key=$(cat ~/.ssh/race-crew-deploy.pub)" \
-  -var "repo_url=https://github.com/<owner>/<repo>.git"
+  -var "db_password=<MYSQL_PASSWORD>" \
+  -var "secret_key=<SECRET_KEY>" \
+  -var "domain_name=racecrew.net" \
+  -var "route53_zone_id=<ZONE_ID>"
 ```
 
-#### 6. Store the instance IP
+#### 5. Store Terraform outputs in GitHub
+
+After `terraform apply`, capture the outputs and store them:
 
 ```bash
-gh variable set LIGHTSAIL_HOST --body "$(terraform output -raw static_ip)"
+gh variable set CONTAINER_SERVICE_NAME --body "race-crew-network"
+gh variable set DB_ENDPOINT --body "$(terraform output -raw database_endpoint):$(terraform output -raw database_port)"
+gh variable set BUCKET_NAME --body "$(terraform output -raw bucket_name)"
+gh secret set BUCKET_ACCESS_KEY_ID --body "$(terraform output -raw bucket_access_key_id)"
+gh secret set BUCKET_SECRET_ACCESS_KEY --body "$(terraform output -raw bucket_secret_access_key)"
 ```
 
-#### 7. Wait and verify
-
-The instance takes ~3 minutes to install Docker via user-data. Then verify:
-
-```bash
-STATIC_IP=$(terraform output -raw static_ip)
-ssh -i ~/.ssh/race-crew-deploy ec2-user@$STATIC_IP \
-  "docker --version && docker compose version && ls ~/app"
-```
-
-#### 8. Trigger the first deploy
+#### 6. Trigger the first deploy
 
 ```bash
 gh workflow run deploy.yml
 ```
 
-#### 9. Get admin credentials
+#### 7. Get admin credentials
 
-The app auto-generates admin credentials on first boot:
+The app auto-generates admin credentials on first boot. Check the container logs
+in the Lightsail console or via AWS CLI:
 
 ```bash
-ssh -i ~/.ssh/race-crew-deploy ec2-user@$STATIC_IP \
-  "cd ~/app && docker compose logs web 2>&1 | grep -A 6 'INITIAL ADMIN'"
+aws lightsail get-container-log \
+  --service-name race-crew-network \
+  --container-name web
 ```
 
 ### Managing infrastructure
@@ -304,11 +274,10 @@ To make changes locally:
 ```bash
 cd terraform
 terraform plan \
-  -var "ssh_public_key=$(cat ~/.ssh/race-crew-deploy.pub)" \
-  -var "repo_url=https://github.com/<owner>/<repo>.git"
-terraform apply \
-  -var "ssh_public_key=$(cat ~/.ssh/race-crew-deploy.pub)" \
-  -var "repo_url=https://github.com/<owner>/<repo>.git"
+  -var "db_password=<MYSQL_PASSWORD>" \
+  -var "secret_key=<SECRET_KEY>" \
+  -var "domain_name=racecrew.net" \
+  -var "route53_zone_id=<ZONE_ID>"
 ```
 
 To tear down everything:
@@ -316,8 +285,10 @@ To tear down everything:
 ```bash
 cd terraform
 terraform destroy \
-  -var "ssh_public_key=$(cat ~/.ssh/race-crew-deploy.pub)" \
-  -var "repo_url=https://github.com/<owner>/<repo>.git"
+  -var "db_password=<MYSQL_PASSWORD>" \
+  -var "secret_key=<SECRET_KEY>" \
+  -var "domain_name=racecrew.net" \
+  -var "route53_zone_id=<ZONE_ID>"
 ```
 
 ---
@@ -331,13 +302,12 @@ workflow has two stages:
    with layer caching, then pushes to GHCR with three tags:
    - `latest` — for docker-compose simplicity
    - Git SHA (e.g. `065d419e...`) — for traceability and rollback
-   - Semantic version (e.g. `0.17.0`) — for release tracking
-2. **Deploy** — SSHes into the Lightsail instance, pulls the latest code,
-   writes the `.env` file from GitHub Secrets, pulls the pre-built image from
-   GHCR, and restarts the containers.
+   - Semantic version (e.g. `0.18.0`) — for release tracking
+2. **Deploy** — Uses AWS CLI to create a new container service deployment with
+   the SHA-tagged image and environment variables from GitHub Secrets/Variables.
 
-This is a **zero-downtime** deploy — containers are never stopped to free RAM
-for building. The image is pre-built in GitHub Actions and pulled to the server.
+The container service handles HTTPS termination, health checks, and rolling
+deployments automatically. No SSH, nginx, or certbot required.
 
 ### Container images
 
@@ -348,7 +318,7 @@ ghcr.io/chris-edwards-pub/race-crew-network
 ```
 
 Since the repo is public, the images are public too — no authentication is
-needed to pull them on the Lightsail server.
+needed to pull them.
 
 Browse published images at:
 https://github.com/chris-edwards-pub/race-crew-network/pkgs/container/race-crew-network
@@ -373,53 +343,23 @@ gh run list --workflow=deploy.yml
 
 ### Roll back to a specific version
 
-On the Lightsail instance, pull a specific image tag and restart:
+Deploy a previous image tag by creating a new container service deployment:
 
 ```bash
-cd ~/app
-docker compose pull web  # pulls :latest by default
-# Or pull a specific version:
-# docker pull ghcr.io/chris-edwards-pub/race-crew-network:0.17.0
-# docker tag ghcr.io/chris-edwards-pub/race-crew-network:0.17.0 ghcr.io/chris-edwards-pub/race-crew-network:latest
-docker compose up -d --remove-orphans
+aws lightsail create-container-service-deployment \
+  --service-name race-crew-network \
+  --containers '{"web": {"image": "ghcr.io/chris-edwards-pub/race-crew-network:<SHA_OR_VERSION>", ...}}'
 ```
 
-### Emergency fallback (build on server)
-
-If GHCR is unavailable, you can still build directly on the server. The
-`Dockerfile` and `build:` directive remain in `docker-compose.yml`:
-
-```bash
-cd ~/app
-docker compose up -d --build
-```
-
-Note: This requires stopping containers first to free RAM on the 2GB instance:
-
-```bash
-docker compose down
-docker pull python:3.11-slim
-docker compose up -d --build
-```
-
-### SSH into the instance
-
-```bash
-ssh -i ~/.ssh/race-crew-deploy ec2-user@<STATIC_IP>
-cd ~/app
-docker compose ps
-docker compose logs web
-```
+Or re-run a previous successful workflow from the GitHub Actions UI.
 
 ---
 
 ## DNS Setup
 
-Point your domain's A record to the static IP from `terraform output static_ip`.
-
-HTTPS is provisioned automatically on deploy via Let's Encrypt. The first deploy
-obtains the certificate; subsequent deploys reuse it. Certificates auto-renew
-every 60 days.
+DNS is managed by Terraform via Route 53. The CNAME record points to the
+container service URL. HTTPS is handled by a Lightsail-managed SSL certificate
+with automatic DNS validation and renewal.
 
 ---
 
@@ -427,12 +367,13 @@ every 60 days.
 
 | Component | Monthly Cost |
 |-----------|-------------|
-| Lightsail instance (small_3_0, 2GB RAM) | $10 |
-| Static IP (attached to instance) | $0 |
+| Lightsail Container Service (Micro) | $10 |
+| Lightsail Managed MySQL (micro_1_0) | $15 |
+| Lightsail Object Storage (small_1_0) | $1 |
 | S3 state bucket | ~$0 |
 | GitHub Actions | $0 (free tier) |
 | GHCR container images | $0 (free for public repos) |
-| **Total** | **~$10/mo** |
+| **Total** | **~$26/mo** |
 
 ---
 
@@ -440,19 +381,11 @@ every 60 days.
 
 ### Database
 
-```bash
-# Dump database to file
-docker compose exec db mysqldump -u racecrew -pracecrew racecrew > backup.sql
-
-# Restore from backup
-docker compose exec -T db mysql -u racecrew -pracecrew racecrew < backup.sql
-```
+Lightsail Managed MySQL includes automated daily backups with 7-day retention.
+Point-in-time restore is available through the Lightsail console or API.
 
 ### Uploaded Documents
 
-```bash
-# Copy uploads from Docker volume
-docker compose cp web:/app/uploads ./uploads-backup
-```
-
-Consider setting up a cron job to back these up to S3 regularly.
+File uploads are stored in Lightsail Object Storage (S3-compatible) and persist
+across container redeployments. Consider enabling bucket versioning for
+additional protection.

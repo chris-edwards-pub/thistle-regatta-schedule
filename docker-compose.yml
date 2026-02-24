@@ -1,8 +1,11 @@
+# Local development only — production uses Lightsail Container Service
 services:
   web:
     build: .
     image: ghcr.io/chris-edwards-pub/race-crew-network:latest
     env_file: .env
+    ports:
+      - "80:8000"
     depends_on:
       db:
         condition: service_healthy
@@ -22,33 +25,6 @@ services:
       retries: 10
     restart: unless-stopped
 
-  nginx:
-    image: nginx:alpine
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
-      - ./nginx/ssl.conf.template:/etc/nginx/templates/ssl.conf.template:ro
-      - ./nginx/entrypoint.sh:/entrypoint.sh:ro
-      - certbot_www:/var/www/certbot:ro
-      - certbot_certs:/etc/letsencrypt:ro
-    env_file: .env
-    entrypoint: /entrypoint.sh
-    depends_on:
-      - web
-    restart: unless-stopped
-
-  certbot:
-    image: certbot/certbot
-    volumes:
-      - certbot_www:/var/www/certbot
-      - certbot_certs:/etc/letsencrypt
-    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew --quiet; sleep 12h & wait $${!}; done'"
-    restart: unless-stopped
-
 volumes:
   mysql_data:
   uploads:
-  certbot_www:
-  certbot_certs:
