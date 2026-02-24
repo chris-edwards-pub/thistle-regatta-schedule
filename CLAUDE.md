@@ -50,3 +50,7 @@ Semantic Versioning (SemVer): `MAJOR.MINOR.PATCH`
 - This is a public repo, store all sensitive information in GitHub secrets and variables
 - Check each PR for known security issues
 - When planning take security into consideration
+
+## Documentation
+- Keep the README.md file up to date with each PR
+
