@@ -71,5 +71,5 @@ variable "ghcr_image" {
 variable "db_bundle_id" {
   description = "Lightsail database bundle (size/price)"
   type        = string
-  default     = "micro_1_0"
+  default     = "micro_2_0"
 }

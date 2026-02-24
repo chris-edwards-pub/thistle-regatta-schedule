@@ -96,11 +96,13 @@ resource "aws_lightsail_container_service_deployment_version" "app" {
 }
 
 # --- DNS ---
+# Naked domains (zone apex) cannot use CNAME records.
+# Use www subdomain CNAME pointing to the container service.
 
 resource "aws_route53_record" "app" {
   zone_id = var.route53_zone_id
-  name    = var.domain_name
+  name    = "www.${var.domain_name}"
   type    = "CNAME"
   ttl     = 300
-  records = [aws_lightsail_container_service.app.url]
+  records = [replace(aws_lightsail_container_service.app.url, "/^https?://|/$/", "")]
 }
