@@ -3,7 +3,7 @@ set -euxo pipefail
 
 exec > >(tee /var/log/user-data.log) 2>&1
 
-echo "=== Starting user-data script ==="
+echo "=== Starting user-data script (race-crew-network) ==="
 
 # Update system packages
 dnf update -y
