@@ -19,6 +19,8 @@ A simple web app for organizing sailboat regattas. Track dates, locations, NOR/S
 - Gunicorn + Nginx
 - Docker Compose
 - Bootstrap 5
+- GitHub Container Registry (GHCR) for container images
+- GitHub Actions for CI/CD
 
 ---
 
@@ -322,10 +324,34 @@ terraform destroy \
 
 ## Deployment
 
-Every push to `master` triggers automatic deployment via GitHub Actions.
+Every push to `master` triggers automatic deployment via GitHub Actions. The
+workflow has two stages:
 
-The deploy workflow SSHes into the Lightsail instance, pulls the latest code,
-writes the `.env` file from GitHub Secrets, and runs `docker compose up -d --build`.
+1. **Build & Push** — Builds the Docker image in GitHub Actions using BuildKit
+   with layer caching, then pushes to GHCR with three tags:
+   - `latest` — for docker-compose simplicity
+   - Git SHA (e.g. `065d419e...`) — for traceability and rollback
+   - Semantic version (e.g. `0.17.0`) — for release tracking
+2. **Deploy** — SSHes into the Lightsail instance, pulls the latest code,
+   writes the `.env` file from GitHub Secrets, pulls the pre-built image from
+   GHCR, and restarts the containers.
+
+This is a **zero-downtime** deploy — containers are never stopped to free RAM
+for building. The image is pre-built in GitHub Actions and pulled to the server.
+
+### Container images
+
+Images are stored in GHCR at:
+
+```
+ghcr.io/chris-edwards-pub/race-crew-network
+```
+
+Since the repo is public, the images are public too — no authentication is
+needed to pull them on the Lightsail server.
+
+Browse published images at:
+https://github.com/chris-edwards-pub/race-crew-network/pkgs/container/race-crew-network
 
 ### Manual deploy
 
@@ -333,10 +359,47 @@ writes the `.env` file from GitHub Secrets, and runs `docker compose up -d --bui
 gh workflow run deploy.yml
 ```
 
+To deploy a specific branch:
+
+```bash
+gh workflow run deploy.yml -f branch=feature/my-branch
+```
+
 ### Check deploy status
 
 ```bash
 gh run list --workflow=deploy.yml
+```
+
+### Roll back to a specific version
+
+On the Lightsail instance, pull a specific image tag and restart:
+
+```bash
+cd ~/app
+docker compose pull web  # pulls :latest by default
+# Or pull a specific version:
+# docker pull ghcr.io/chris-edwards-pub/race-crew-network:0.17.0
+# docker tag ghcr.io/chris-edwards-pub/race-crew-network:0.17.0 ghcr.io/chris-edwards-pub/race-crew-network:latest
+docker compose up -d --remove-orphans
+```
+
+### Emergency fallback (build on server)
+
+If GHCR is unavailable, you can still build directly on the server. The
+`Dockerfile` and `build:` directive remain in `docker-compose.yml`:
+
+```bash
+cd ~/app
+docker compose up -d --build
+```
+
+Note: This requires stopping containers first to free RAM on the 2GB instance:
+
+```bash
+docker compose down
+docker pull python:3.11-slim
+docker compose up -d --build
 ```
 
 ### SSH into the instance
@@ -368,6 +431,7 @@ every 60 days.
 | Static IP (attached to instance) | $0 |
 | S3 state bucket | ~$0 |
 | GitHub Actions | $0 (free tier) |
+| GHCR container images | $0 (free for public repos) |
 | **Total** | **~$10/mo** |
 
 ---

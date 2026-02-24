@@ -1,5 +1,8 @@
 # Version History
 
+## 0.17.1
+- Update README with GHCR deployment docs, rollback instructions, and emergency fallback
+
 ## 0.17.0
 - Build and push Docker images to GHCR via GitHub Actions
 - Deploy pulls pre-built images instead of building on server
