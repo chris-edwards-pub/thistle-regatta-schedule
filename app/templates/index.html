@@ -8,7 +8,12 @@
     <a href="{{ url_for('regattas.pdf') }}" class="btn btn-outline-secondary btn-sm no-print" target="_blank">Print PDF</a>
 </div>
 
-{% macro regatta_table(regattas, is_past) %}
+{% macro regatta_table(regattas, is_past, table_id) %}
+{% if current_user.is_admin %}
+<form method="POST" action="{{ url_for('regattas.bulk_delete') }}" id="{{ table_id }}-form" onsubmit="return confirmBulkDelete(this)">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+</form>
+{% endif %}
 <div class="table-responsive">
     <table class="table table-hover align-middle{% if is_past %} regatta-past{% endif %}">
         <thead>
@@ -16,13 +21,14 @@
                 <th>Date(s)</th>
                 <th>Regatta</th>
                 <th>Location</th>
-                <th>Docs</th>
-                <th>Crew</th>
+                <th class="text-nowrap">Docs</th>
+                <th class="text-nowrap">Crew</th>
                 {% if not is_past %}
                 <th>Your RSVP</th>
                 {% endif %}
                 {% if current_user.is_admin %}
-                <th></th>
+                <th>Edit</th>
+                <th><input type="checkbox" class="select-all" data-table="{{ table_id }}"></th>
                 {% endif %}
             </tr>
         </thead>
@@ -45,12 +51,12 @@
                     {{ regatta.location }}
                     {% endif %}
                 </td>
-                <td>
+                <td class="text-nowrap">
                     {% for doc in regatta.documents %}
                     <a href="{% if doc.url %}{{ doc.url }}{% else %}{{ url_for('regattas.download_doc', doc_id=doc.id) }}{% endif %}" class="badge bg-info text-decoration-none doc-link" target="_blank">{{ doc.doc_type }}</a>
                     {% endfor %}
                 </td>
-                <td>
+                <td class="text-nowrap">
                     {% for rsvp in regatta.rsvps|sort_rsvps %}
                     <a href="{{ url_for('auth.view_profile', user_id=rsvp.user.id) }}" class="crew-badge {{ rsvp.status }}" title="{{ rsvp.user.display_name }}">{% if rsvp.status == 'yes' %}&#10003;{% elif rsvp.status == 'no' %}&#10007;{% elif rsvp.status == 'maybe' %}?{% endif %} {{ rsvp.user.initials }}</a>
                     {% endfor %}
@@ -70,12 +76,11 @@
                 </td>
                 {% endif %}
                 {% if current_user.is_admin %}
-                <td class="text-nowrap">
+                <td>
                     <a href="{{ url_for('regattas.edit', regatta_id=regatta.id) }}" class="btn btn-sm btn-outline-secondary">Edit</a>
-                    <form method="POST" action="{{ url_for('regattas.delete', regatta_id=regatta.id) }}" class="d-inline" onsubmit="return confirm('Delete this regatta?')">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <button type="submit" class="btn btn-sm btn-outline-danger">Del</button>
-                    </form>
+                </td>
+                <td>
+                    <input type="checkbox" name="selected" value="{{ regatta.id }}" form="{{ table_id }}-form">
                 </td>
                 {% endif %}
             </tr>
@@ -83,17 +88,45 @@
         </tbody>
     </table>
 </div>
+{% if current_user.is_admin %}
+<div class="text-end">
+    <button type="submit" form="{{ table_id }}-form" class="btn btn-sm btn-outline-danger">Delete Selected</button>
+</div>
+{% endif %}
 {% endmacro %}
 
 {% if upcoming %}
 <h5>Upcoming</h5>
-{{ regatta_table(upcoming, false) }}
+{{ regatta_table(upcoming, false, "upcoming") }}
 {% else %}
 <p class="text-muted">No upcoming regattas. {% if current_user.is_admin %}Add one!{% endif %}</p>
 {% endif %}
 
 {% if past %}
 <h5 class="mt-4">Past</h5>
-{{ regatta_table(past, true) }}
+{{ regatta_table(past, true, "past") }}
+{% endif %}
+
+{% if current_user.is_admin %}
+<script>
+document.querySelectorAll('.select-all').forEach(function(cb) {
+    cb.addEventListener('change', function() {
+        var formId = this.dataset.table + '-form';
+        document.querySelectorAll('input[name="selected"][form="' + formId + '"]').forEach(function(box) {
+            box.checked = cb.checked;
+        });
+    });
+});
+
+function confirmBulkDelete(form) {
+    var formId = form.id;
+    var count = document.querySelectorAll('input[name="selected"][form="' + formId + '"]:checked').length;
+    if (count === 0) {
+        alert('No regattas selected.');
+        return false;
+    }
+    return confirm('Delete ' + count + ' selected regatta(s)?');
+}
+</script>
 {% endif %}
 {% endblock %}

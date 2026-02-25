@@ -106,6 +106,34 @@ def delete(regatta_id: int):
     return redirect(url_for("regattas.index"))
 
 
+@bp.route("/regattas/bulk-delete", methods=["POST"])
+@login_required
+def bulk_delete():
+    if not current_user.is_admin:
+        flash("Access denied.", "error")
+        return redirect(url_for("regattas.index"))
+
+    selected = request.form.getlist("selected")
+    if not selected:
+        flash("No regattas selected.", "warning")
+        return redirect(url_for("regattas.index"))
+
+    count = 0
+    for regatta_id in selected:
+        try:
+            rid = int(regatta_id)
+        except (ValueError, TypeError):
+            continue
+        regatta = db.session.get(Regatta, rid)
+        if regatta:
+            db.session.delete(regatta)
+            count += 1
+
+    db.session.commit()
+    flash(f"Deleted {count} regatta(s).", "success")
+    return redirect(url_for("regattas.index"))
+
+
 @bp.route("/regattas/<int:regatta_id>/rsvp", methods=["POST"])
 @login_required
 def rsvp(regatta_id: int):
