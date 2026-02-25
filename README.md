@@ -51,9 +51,11 @@ Local Development:
 
 ### Prerequisites
 
-- Docker and Docker Compose installed
+- Python 3.11+
+- MySQL 8 installed locally
+- Docker and Docker Compose (optional, for containerized dev)
 
-### 1. Clone and configure
+### Quick Start (dev script)
 
 ```bash
 git clone <your-repo-url>
@@ -61,14 +63,32 @@ cd race-crew-network
 cp .env.example .env
 ```
 
-Edit `.env` and set a real `SECRET_KEY`:
+Edit `.env` and set `SECRET_KEY`, `INIT_ADMIN_EMAIL`, `INIT_ADMIN_PASSWORD`, and
+optionally `ANTHROPIC_API_KEY` for the AI schedule import feature.
 
 ```bash
-# Generate a random key
-python3 -c "import secrets; print(secrets.token_hex(32))"
+./dev.sh start
 ```
 
-### 2. Build and start
+This handles everything: creates a virtual environment, installs dependencies,
+creates the MySQL database, runs migrations, creates the admin account, and
+starts Flask on port 5001. Open http://localhost:5001 and log in.
+
+#### Dev script commands
+
+| Command | Description |
+|---------|-------------|
+| `./dev.sh start` | Install deps, migrate DB, start Flask (idempotent) |
+| `./dev.sh stop` | Stop the Flask server |
+| `./dev.sh restart` | Stop and start |
+| `./dev.sh reset-db` | Drop DB, recreate, migrate, create admin |
+| `./dev.sh status` | Check if Flask is running and DB is accessible |
+| `./dev.sh cleanup` | Full teardown: stop server, drop DB, remove .venv |
+| `./dev.sh logs` | Tail Flask output |
+
+Set `DEV_PORT` to use a different port (default: 5001).
+
+### Docker Compose (alternative)
 
 ```bash
 docker compose up --build
@@ -80,35 +100,27 @@ This starts 2 containers:
 
 The app automatically runs database migrations on startup.
 
-### 3. Create admin account
-
 ```bash
 docker compose exec web flask create-admin
 ```
 
 You'll be prompted for email, password, display name, and initials.
 
-### 4. Access the app
+Open http://localhost and login with your admin credentials.
 
-Open http://localhost in your browser and login with your admin credentials.
-
-### 5. Invite crew
+### Invite crew
 
 1. Go to **Crew** in the navbar
 2. Enter a crew member's email and click **Send Invite**
 3. Copy the invite link and send it to them
 4. They click the link, set their name/initials/password, and they're in
 
-### 6. Stop
+### Stop
 
 ```bash
-docker compose down
-```
-
-To also remove the database volume (fresh start):
-
-```bash
-docker compose down -v
+./dev.sh stop          # dev script
+docker compose down    # Docker
+docker compose down -v # Docker + wipe database volume
 ```
 
 ---
