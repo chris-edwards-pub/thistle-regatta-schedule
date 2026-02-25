@@ -93,7 +93,9 @@ jobs:
                   "BUCKET_NAME": "${{ vars.BUCKET_NAME }}",
                   "AWS_ACCESS_KEY_ID": "${{ secrets.BUCKET_ACCESS_KEY_ID }}",
                   "AWS_SECRET_ACCESS_KEY": "${{ secrets.BUCKET_SECRET_ACCESS_KEY }}",
-                  "AWS_REGION": "us-east-1"
+                  "AWS_REGION": "us-east-1",
+                  "INIT_ADMIN_EMAIL": "${{ secrets.INIT_ADMIN_EMAIL }}",
+                  "INIT_ADMIN_PASSWORD": "${{ secrets.INIT_ADMIN_PASSWORD }}"
                 }
               }
             }' \
