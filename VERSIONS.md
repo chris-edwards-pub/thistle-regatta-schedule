@@ -1,5 +1,9 @@
 # Version History
 
+## 0.20.2
+- Bulk delete regattas: admin can select multiple regattas via checkboxes and delete them at once
+- Select-all checkbox and confirmation dialog for both upcoming and past tables
+
 ## 0.20.1
 - Extract JSON-LD schema.org Event data from pages that load events via JavaScript
 - Automatically filter out past events from import results

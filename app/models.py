@@ -71,16 +71,16 @@ class Regatta(db.Model):
     rsvps = db.relationship(
         "RSVP", backref="regatta", lazy="dynamic", cascade="all, delete-orphan"
     )
-    creator = db.relationship("User", backref="created_regattas", foreign_keys=[created_by])
+    creator = db.relationship(
+        "User", backref="created_regattas", foreign_keys=[created_by]
+    )
 
 
 class Document(db.Model):
     __tablename__ = "documents"
 
     id = db.Column(db.Integer, primary_key=True)
-    regatta_id = db.Column(
-        db.Integer, db.ForeignKey("regattas.id"), nullable=False
-    )
+    regatta_id = db.Column(db.Integer, db.ForeignKey("regattas.id"), nullable=False)
     doc_type = db.Column(db.String(20), nullable=False)  # NOR, SI, WWW
     original_filename = db.Column(db.String(255), nullable=True)
     stored_filename = db.Column(db.String(255), nullable=True)
@@ -95,9 +95,7 @@ class RSVP(db.Model):
     __tablename__ = "rsvps"
 
     id = db.Column(db.Integer, primary_key=True)
-    regatta_id = db.Column(
-        db.Integer, db.ForeignKey("regattas.id"), nullable=False
-    )
+    regatta_id = db.Column(db.Integer, db.ForeignKey("regattas.id"), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     status = db.Column(db.String(10), nullable=False)  # yes, no, maybe
     updated_at = db.Column(

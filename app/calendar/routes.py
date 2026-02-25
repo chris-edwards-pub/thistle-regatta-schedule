@@ -1,14 +1,14 @@
 import secrets
 from datetime import timedelta
 
-from markupsafe import Markup
 from flask import Response, flash, redirect, url_for
 from flask_login import current_user, login_required
 from icalendar import Calendar, Event
+from markupsafe import Markup
 
 from app import db
 from app.calendar import bp
-from app.models import Regatta, RSVP, User
+from app.models import RSVP, Regatta, User
 
 
 @bp.route("/calendar/subscribe")
@@ -22,9 +22,12 @@ def subscribe():
     feed_url = url_for(
         "calendar.ical_feed", token=current_user.calendar_token, _external=True
     )
-    flash(Markup(
-        f'Subscribe to this URL in your calendar app: <a href="{feed_url}" class="alert-link">{feed_url}</a>'
-    ), "success")
+    flash(
+        Markup(
+            f'Subscribe to this URL in your calendar app: <a href="{feed_url}" class="alert-link">{feed_url}</a>'
+        ),
+        "success",
+    )
     return redirect(url_for("regattas.index"))
 
 
@@ -70,9 +73,7 @@ def ical_feed(token: str):
             lines.append("Crew:\n" + "\n".join(crew_lines))
 
         # Show user's own RSVP status
-        my_rsvp = RSVP.query.filter_by(
-            regatta_id=regatta.id, user_id=user.id
-        ).first()
+        my_rsvp = RSVP.query.filter_by(regatta_id=regatta.id, user_id=user.id).first()
         if my_rsvp:
             lines.append(f"Your RSVP: {my_rsvp.status.capitalize()}")
 
@@ -82,5 +83,7 @@ def ical_feed(token: str):
         cal.add_component(event)
 
     response = Response(cal.to_ical(), mimetype="text/calendar")
-    response.headers["Content-Disposition"] = "attachment; filename=race-crew-network.ics"
+    response.headers["Content-Disposition"] = (
+        "attachment; filename=race-crew-network.ics"
+    )
     return response
