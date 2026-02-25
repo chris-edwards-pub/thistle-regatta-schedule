@@ -44,6 +44,15 @@
         "s3:DeleteObject"
       ],
       "Resource": "arn:aws:s3:::race-crew-network-uploads/*"
+    },
+    {
+      "Sid": "RedirectBucket",
+      "Effect": "Allow",
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::racecrew.net",
+        "arn:aws:s3:::racecrew.net/*"
+      ]
     }
   ]
 }

@@ -103,8 +103,7 @@ resource "aws_lightsail_container_service_deployment_version" "app" {
 }
 
 # --- DNS ---
-# Naked domains (zone apex) cannot use CNAME records.
-# Use www subdomain CNAME pointing to the container service.
+# www subdomain CNAME pointing to the container service.
 
 resource "aws_route53_record" "app" {
   zone_id = var.route53_zone_id
@@ -112,4 +111,32 @@ resource "aws_route53_record" "app" {
   type    = "CNAME"
   ttl     = 300
   records = [replace(aws_lightsail_container_service.app.url, "/^https?://|/$/", "")]
+}
+
+# Naked domain redirect: S3 bucket redirects racecrew.net -> www.racecrew.net
+# Route 53 alias at zone apex points to the S3 website endpoint.
+
+resource "aws_s3_bucket" "redirect" {
+  bucket = var.domain_name
+}
+
+resource "aws_s3_bucket_website_configuration" "redirect" {
+  bucket = aws_s3_bucket.redirect.id
+
+  redirect_all_requests_to {
+    host_name = "www.${var.domain_name}"
+    protocol  = "https"
+  }
+}
+
+resource "aws_route53_record" "apex" {
+  zone_id = var.route53_zone_id
+  name    = var.domain_name
+  type    = "A"
+
+  alias {
+    name                   = aws_s3_bucket_website_configuration.redirect.website_domain
+    zone_id                = aws_s3_bucket.redirect.hosted_zone_id
+    evaluate_target_health = false
+  }
 }
