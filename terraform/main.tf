@@ -5,6 +5,13 @@ resource "aws_lightsail_container_service" "app" {
   power = var.container_power
   scale = var.container_scale
 
+  public_domain_names {
+    certificate {
+      certificate_name = aws_lightsail_certificate.app.name
+      domain_names     = ["www.${var.domain_name}"]
+    }
+  }
+
   tags = {
     Project = "race-crew-network"
   }
@@ -14,7 +21,7 @@ resource "aws_lightsail_container_service" "app" {
 
 resource "aws_lightsail_certificate" "app" {
   name        = "${var.instance_name}-cert"
-  domain_name = var.domain_name
+  domain_name = "www.${var.domain_name}"
 }
 
 # DNS validation record for the SSL certificate
