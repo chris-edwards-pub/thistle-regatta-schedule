@@ -11,3 +11,4 @@
 - [ ] GH Action build containers with git push on any branch
 - [ ] GH Action tag versions for master and for branches tag with branch name. ie: feature-thingy
 - [ ] Setup email & SMS reminders
+- [ ] Can we cache any of the AI excepted regattas? AI could search internally first. Then allow me to force a second search on a URL in case more regattas were added.
