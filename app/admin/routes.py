@@ -23,8 +23,8 @@ logger = logging.getLogger(__name__)
 
 MAX_CONTENT_LENGTH = 20_000
 
-# Temporary storage for discovery results keyed by task ID.
-# Entries are removed when consumed by import_schedule_documents.
+# Temporary storage keyed by UUID task ID, cleaned up when consumed.
+_extraction_results: dict[str, dict] = {}
 _discovery_results: dict[str, dict] = {}
 
 
@@ -241,6 +241,149 @@ def import_schedule():
         years=years,
         selected_year=year,
         regattas=regattas,
+    )
+
+
+@bp.route("/admin/import-schedule/extract", methods=["POST"])
+@login_required
+def import_schedule_extract():
+    """SSE endpoint that streams extraction progress."""
+    denied = _require_admin()
+    if denied:
+        return denied
+
+    schedule_text = request.form.get("schedule_text", "").strip()
+    schedule_url = request.form.get("schedule_url", "").strip()
+    current_year = date.today().year
+    year = int(request.form.get("year", current_year))
+    task_id = str(uuid.uuid4())
+
+    def _sse(event: dict) -> str:
+        return f"data: {json.dumps(event)}\n\n"
+
+    def generate():
+        content = schedule_text
+
+        if schedule_url:
+            yield _sse({"type": "progress", "message": f"Fetching {schedule_url}..."})
+            try:
+                content = _fetch_url_content(schedule_url)
+            except (ValueError, requests.RequestException) as e:
+                yield _sse({"type": "error", "message": f"Could not fetch URL: {e}"})
+                yield _sse({"type": "failed"})
+                return
+        elif content:
+            yield _sse({"type": "progress", "message": "Processing pasted text..."})
+
+        if not content:
+            yield _sse({"type": "error", "message": "No content to process."})
+            yield _sse({"type": "failed"})
+            return
+
+        yield _sse({"type": "progress", "message": "Sending to AI for extraction..."})
+
+        try:
+            regattas = extract_regattas(content, year)
+        except (ValueError, ConnectionError) as e:
+            yield _sse({"type": "error", "message": str(e)})
+            yield _sse({"type": "failed"})
+            return
+
+        yield _sse(
+            {
+                "type": "result",
+                "message": f"AI returned {len(regattas)} event(s)",
+            }
+        )
+
+        # Filter out past events
+        today = date.today().isoformat()
+        past_count = len(regattas)
+        regattas_filtered = [
+            r for r in regattas if (r.get("start_date") or "") >= today
+        ]
+        past_count -= len(regattas_filtered)
+
+        if past_count:
+            yield _sse(
+                {
+                    "type": "progress",
+                    "message": f"Filtered out {past_count} past event(s)",
+                }
+            )
+
+        if not regattas_filtered:
+            msg = "No upcoming regattas found."
+            if past_count:
+                msg += f" ({past_count} past event(s) excluded.)"
+            yield _sse({"type": "error", "message": msg})
+            yield _sse({"type": "failed"})
+            return
+
+        # Check for duplicates
+        dup_count = 0
+        for r in regattas_filtered:
+            start = r.get("start_date")
+            name = r.get("name")
+            if name and start:
+                existing = _find_duplicate(name, date.fromisoformat(start))
+                if existing:
+                    dup_count += 1
+                    r["duplicate_of"] = {
+                        "id": existing.id,
+                        "name": existing.name,
+                        "location": existing.location,
+                        "start_date": existing.start_date.isoformat(),
+                    }
+
+        if dup_count:
+            yield _sse(
+                {
+                    "type": "progress",
+                    "message": f"Found {dup_count} possible duplicate(s)",
+                }
+            )
+
+        _extraction_results[task_id] = {
+            "regattas": regattas_filtered,
+            "year": year,
+        }
+
+        summary = f"Found {len(regattas_filtered)} upcoming regatta(s)"
+        yield _sse({"type": "done", "task_id": task_id, "summary": summary})
+
+    return Response(
+        stream_with_context(generate()),
+        content_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@bp.route("/admin/import-schedule/preview")
+@login_required
+def import_schedule_preview():
+    """Render extraction results from SSE extraction."""
+    denied = _require_admin()
+    if denied:
+        return denied
+
+    task_id = request.args.get("task_id", "")
+    if not task_id or task_id not in _extraction_results:
+        flash("Extraction results not found or expired.", "error")
+        return redirect(url_for("admin.import_schedule"))
+
+    data = _extraction_results.pop(task_id)
+    current_year = date.today().year
+    years = list(range(current_year, current_year + 3))
+
+    return render_template(
+        "admin/import_schedule.html",
+        years=years,
+        selected_year=data["year"],
+        regattas=data["regattas"],
     )
 
 

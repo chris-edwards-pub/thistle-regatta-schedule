@@ -6,33 +6,36 @@
         <h2 class="mb-4">Import Schedule</h2>
         <p class="text-muted">Paste a regatta schedule or provide a URL. AI will extract the events for review before importing.</p>
 
-        <form id="extract-form" method="POST" action="{{ url_for('admin.import_schedule') }}">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <div class="mb-3">
-                <label for="schedule_url" class="form-label">Schedule URL (optional)</label>
-                <input type="url" class="form-control" id="schedule_url" name="schedule_url" placeholder="https://example.com/regatta-schedule" value="{{ request.form.get('schedule_url', '') }}">
-            </div>
-            <div class="mb-3">
-                <label for="schedule_text" class="form-label">Or paste schedule text</label>
-                <textarea class="form-control" id="schedule_text" name="schedule_text" rows="8" placeholder="Paste regatta schedule here...">{{ request.form.get('schedule_text', '') }}</textarea>
-            </div>
-            <div class="row mb-3">
-                <div class="col-auto">
-                    <label for="year" class="form-label">Year</label>
-                    <select class="form-select" id="year" name="year">
-                        {% for y in years %}
-                        <option value="{{ y }}" {% if y == selected_year %}selected{% endif %}>{{ y }}</option>
-                        {% endfor %}
-                    </select>
+        <div id="extract-section">
+            <form id="extract-form" method="POST" action="{{ url_for('admin.import_schedule') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="mb-3">
+                    <label for="schedule_url" class="form-label">Schedule URL (optional)</label>
+                    <input type="url" class="form-control" id="schedule_url" name="schedule_url" placeholder="https://example.com/regatta-schedule" value="{{ request.form.get('schedule_url', '') }}">
                 </div>
-            </div>
-            <button type="submit" id="btn-extract" class="btn btn-primary">Extract Regattas</button>
-            <a href="{{ url_for('regattas.index') }}" class="btn btn-outline-secondary ms-2">Cancel</a>
-        </form>
+                <div class="mb-3">
+                    <label for="schedule_text" class="form-label">Or paste schedule text</label>
+                    <textarea class="form-control" id="schedule_text" name="schedule_text" rows="8" placeholder="Paste regatta schedule here...">{{ request.form.get('schedule_text', '') }}</textarea>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-auto">
+                        <label for="year" class="form-label">Year</label>
+                        <select class="form-select" id="year" name="year">
+                            {% for y in years %}
+                            <option value="{{ y }}" {% if y == selected_year %}selected{% endif %}>{{ y }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <button type="submit" id="btn-extract" class="btn btn-primary">Extract Regattas</button>
+                <a href="{{ url_for('regattas.index') }}" class="btn btn-outline-secondary ms-2">Cancel</a>
+            </form>
+        </div>
 
-        <div id="extract-spinner" class="text-center my-4" style="display: none;">
-            <div class="spinner-border text-primary" role="status"></div>
-            <p class="mt-2 text-muted">AI is extracting regattas... this may take a moment.</p>
+        <div id="extract-terminal" class="mt-4" style="display: none;">
+            <h4>Extracting Regattas...</h4>
+            <div id="extract-output" style="background: #1e1e1e; color: #d4d4d4; font-family: 'Courier New', monospace; font-size: 0.875rem; padding: 1rem; border-radius: 0.375rem; min-height: 120px; max-height: 400px; overflow-y: auto; white-space: pre-wrap;"></div>
+            <a href="{{ url_for('admin.import_schedule') }}" class="btn btn-outline-secondary mt-3" id="extract-start-over" style="display: none;">Start Over</a>
         </div>
 
         {% if regattas is not none and regattas|length > 0 %}
@@ -107,10 +110,94 @@
 
 {% block scripts %}
 <script>
-/* Spinner for initial Extract Regattas form submission */
-document.getElementById('extract-form')?.addEventListener('submit', function() {
-    document.getElementById('btn-extract').disabled = true;
-    document.getElementById('extract-spinner').style.display = 'block';
+/* Shared helper: append a line to a terminal div */
+function terminalAppend(output, icon, text, color) {
+    const line = document.createElement('div');
+    line.style.color = color || '#d4d4d4';
+    line.textContent = icon + ' ' + text;
+    output.appendChild(line);
+    output.scrollTop = output.scrollHeight;
+}
+
+/* Shared helper: read SSE stream and call handler for each event */
+function readSSE(response, output, onEvent) {
+    if (!response.ok) {
+        terminalAppend(output, '\u2717', 'Server error: ' + response.status + ' ' + response.statusText, '#f44747');
+        return;
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    function read() {
+        reader.read().then(({done, value}) => {
+            if (done) return;
+            buffer += decoder.decode(value, {stream: true});
+            const lines = buffer.split('\n');
+            buffer = '';
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                if (line.startsWith('data: ')) {
+                    try {
+                        const event = JSON.parse(line.substring(6));
+                        const handled = onEvent(event);
+                        if (handled === false) return;
+                    } catch (e) { /* incomplete chunk */ }
+                } else if (line !== '') {
+                    buffer = line;
+                }
+            }
+            read();
+        });
+    }
+    read();
+}
+
+/* Extract Regattas — intercept form and show terminal */
+document.getElementById('extract-form')?.addEventListener('submit', function(e) {
+    e.preventDefault();
+    const form = this;
+    const extractSection = document.getElementById('extract-section');
+    const terminal = document.getElementById('extract-terminal');
+    const output = document.getElementById('extract-output');
+    const startOver = document.getElementById('extract-start-over');
+
+    extractSection.style.display = 'none';
+    terminal.style.display = 'block';
+    output.textContent = '';
+
+    const formData = new FormData(form);
+    const csrfToken = formData.get('csrf_token');
+
+    fetch("{{ url_for('admin.import_schedule_extract') }}", {
+        method: 'POST',
+        headers: {'X-CSRFToken': csrfToken},
+        body: formData
+    }).then(response => {
+        readSSE(response, output, function(event) {
+            if (event.type === 'progress') {
+                terminalAppend(output, '\u2192', event.message, '#569cd6');
+            } else if (event.type === 'result') {
+                terminalAppend(output, '\u2713', event.message, '#6a9955');
+            } else if (event.type === 'error') {
+                terminalAppend(output, '\u2717', event.message, '#f44747');
+            } else if (event.type === 'failed') {
+                startOver.style.display = 'inline-block';
+                return false;
+            } else if (event.type === 'done') {
+                terminalAppend(output, '', '', '');
+                terminalAppend(output, '\u2714', event.summary, '#dcdcaa');
+                terminalAppend(output, '\u2192', 'Loading preview...', '#569cd6');
+                setTimeout(function() {
+                    window.location.href = "{{ url_for('admin.import_schedule_preview') }}?task_id=" + event.task_id;
+                }, 800);
+                return false;
+            }
+        });
+    }).catch(function(err) {
+        terminalAppend(output, '\u2717', 'Connection error: ' + err.message, '#f44747');
+        startOver.style.display = 'inline-block';
+    });
 });
 
 /* Select-all checkbox for preview table */
@@ -137,14 +224,6 @@ document.getElementById('btn-find-docs')?.addEventListener('click', function() {
     terminal.style.display = 'block';
     output.textContent = '';
 
-    function appendLine(icon, text, color) {
-        const line = document.createElement('div');
-        line.style.color = color || '#d4d4d4';
-        line.textContent = icon + ' ' + text;
-        output.appendChild(line);
-        output.scrollTop = output.scrollHeight;
-    }
-
     const formData = new FormData(form);
     const csrfToken = formData.get('csrf_token');
 
@@ -153,59 +232,25 @@ document.getElementById('btn-find-docs')?.addEventListener('click', function() {
         headers: {'X-CSRFToken': csrfToken},
         body: formData
     }).then(response => {
-        if (!response.ok) {
-            appendLine('\u2717', 'Server error: ' + response.status + ' ' + response.statusText, '#f44747');
-            return;
-        }
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-
-        function read() {
-            reader.read().then(({done, value}) => {
-                if (done) {
-                    if (!output.textContent.trim()) {
-                        appendLine('\u2717', 'Stream ended without data.', '#f44747');
-                    }
-                    return;
-                }
-                buffer += decoder.decode(value, {stream: true});
-
-                const lines = buffer.split('\n');
-                buffer = '';
-                for (let i = 0; i < lines.length; i++) {
-                    const line = lines[i];
-                    if (line.startsWith('data: ')) {
-                        try {
-                            const event = JSON.parse(line.substring(6));
-                            if (event.type === 'progress') {
-                                appendLine('\u2192', event.message, '#569cd6');
-                            } else if (event.type === 'result') {
-                                appendLine('\u2713', event.message, '#6a9955');
-                            } else if (event.type === 'error') {
-                                appendLine('\u2717', event.message, '#f44747');
-                            } else if (event.type === 'done') {
-                                appendLine('', '', '');
-                                appendLine('\u2714', event.summary, '#dcdcaa');
-                                appendLine('\u2192', 'Redirecting to document review...', '#569cd6');
-                                setTimeout(() => {
-                                    window.location.href = "{{ url_for('admin.import_schedule_documents') }}?task_id=" + event.task_id;
-                                }, 1000);
-                                return;
-                            }
-                        } catch (e) {
-                            // ignore parse errors for incomplete chunks
-                        }
-                    } else if (line !== '') {
-                        buffer = line;
-                    }
-                }
-                read();
-            });
-        }
-        read();
-    }).catch(err => {
-        appendLine('\u2717', 'Connection error: ' + err.message, '#f44747');
+        readSSE(response, output, function(event) {
+            if (event.type === 'progress') {
+                terminalAppend(output, '\u2192', event.message, '#569cd6');
+            } else if (event.type === 'result') {
+                terminalAppend(output, '\u2713', event.message, '#6a9955');
+            } else if (event.type === 'error') {
+                terminalAppend(output, '\u2717', event.message, '#f44747');
+            } else if (event.type === 'done') {
+                terminalAppend(output, '', '', '');
+                terminalAppend(output, '\u2714', event.summary, '#dcdcaa');
+                terminalAppend(output, '\u2192', 'Redirecting to document review...', '#569cd6');
+                setTimeout(function() {
+                    window.location.href = "{{ url_for('admin.import_schedule_documents') }}?task_id=" + event.task_id;
+                }, 1000);
+                return false;
+            }
+        });
+    }).catch(function(err) {
+        terminalAppend(output, '\u2717', 'Connection error: ' + err.message, '#f44747');
     });
 });
 </script>
