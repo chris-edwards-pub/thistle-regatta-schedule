@@ -1,5 +1,15 @@
 # Version History
 
+## 0.22.0
+- Auto-discover NOR/SI/WWW documents during AI schedule import
+- AI extracts detail_url for each regatta's individual event page
+- "Find Documents & Import" button fetches detail pages and discovers document links
+- Live terminal shows real-time progress via SSE streaming as pages are fetched
+- Document review page with checkboxes to select which documents to attach
+- "Import Without Documents" button preserves original import flow
+- Discovered documents created as URL-based Document records on import
+- Link URLs preserved in fetched HTML so AI can see href targets
+
 ## 0.21.0
 - Detect duplicate regattas during AI import preview with warning badges
 - Case-insensitive duplicate matching (name + start date) against existing regattas

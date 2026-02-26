@@ -2,24 +2,30 @@ import ipaddress
 import json
 import logging
 import re
+import uuid
 from datetime import date
 from socket import getaddrinfo
-from urllib.parse import quote_plus, urlparse
+from urllib.parse import quote_plus, urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
-from flask import flash, redirect, render_template, request, url_for
+from flask import (Response, current_app, flash, redirect, render_template,
+                   request, url_for)
 from flask_login import current_user, login_required
 from sqlalchemy import func
 
 from app import db
 from app.admin import bp
-from app.admin.ai_service import extract_regattas
-from app.models import Regatta
+from app.admin.ai_service import discover_documents, extract_regattas
+from app.models import Document, Regatta
 
 logger = logging.getLogger(__name__)
 
-MAX_CONTENT_LENGTH = 15_000
+MAX_CONTENT_LENGTH = 20_000
+
+# Temporary storage for discovery results keyed by task ID.
+# Entries are removed when consumed by import_schedule_documents.
+_discovery_results: dict[str, dict] = {}
 
 
 def _require_admin():
@@ -74,6 +80,18 @@ def _fetch_url_content(url: str) -> str:
         # Remove scripts and styles for plain text extraction
         for tag in soup(["script", "style", "nav", "footer", "header"]):
             tag.decompose()
+
+        # Preserve link URLs so AI can see them in plain text
+        for a_tag in soup.find_all("a", href=True):
+            href = a_tag["href"]
+            # Resolve relative URLs to absolute
+            abs_url = urljoin(url, href)
+            link_text = a_tag.get_text(strip=True)
+            if link_text:
+                a_tag.replace_with(f"{link_text} [{abs_url}]")
+            else:
+                a_tag.replace_with(f"[{abs_url}]")
+
         text = soup.get_text(separator="\n", strip=True)
 
         # Prepend JSON-LD events so the AI sees structured data
@@ -240,6 +258,7 @@ def import_schedule_confirm():
 
     created = 0
     skipped = 0
+    docs_created = 0
 
     for idx in selected:
         name = request.form.get(f"name_{idx}", "").strip()
@@ -286,11 +305,156 @@ def import_schedule_confirm():
         db.session.add(regatta)
         created += 1
 
+        # Create associated documents if present
+        doc_count_str = request.form.get(f"doc_count_{idx}", "0")
+        try:
+            doc_count = int(doc_count_str)
+        except ValueError:
+            doc_count = 0
+
+        if doc_count > 0:
+            db.session.flush()  # Get regatta.id
+            for d_idx in range(doc_count):
+                checkbox = request.form.get(f"doc_{idx}_{d_idx}")
+                if not checkbox:
+                    continue
+                doc_type = request.form.get(f"doc_type_{idx}_{d_idx}", "").strip()
+                doc_url = request.form.get(f"doc_url_{idx}_{d_idx}", "").strip()
+                if doc_type and doc_url:
+                    doc = Document(
+                        regatta_id=regatta.id,
+                        doc_type=doc_type,
+                        url=doc_url,
+                        uploaded_by=current_user.id,
+                    )
+                    db.session.add(doc)
+                    docs_created += 1
+
     db.session.commit()
 
+    msg = f"Successfully imported {created} regatta(s)."
+    if docs_created:
+        msg += f" {docs_created} document(s) attached."
     if created:
-        flash(f"Successfully imported {created} regatta(s).", "success")
+        flash(msg, "success")
     if skipped:
         flash(f"Skipped {skipped} regatta(s) (invalid or duplicate).", "warning")
 
     return redirect(url_for("regattas.index"))
+
+
+@bp.route("/admin/import-schedule/discover", methods=["POST"])
+@login_required
+def import_schedule_discover():
+    denied = _require_admin()
+    if denied:
+        return denied
+
+    selected = request.form.getlist("selected")
+    task_id = str(uuid.uuid4())
+
+    # Collect regatta data from the form
+    regatta_data = []
+    for idx in selected:
+        regatta_data.append(
+            {
+                "idx": idx,
+                "name": request.form.get(f"name_{idx}", "").strip(),
+                "location": request.form.get(f"location_{idx}", "").strip(),
+                "location_url": request.form.get(f"location_url_{idx}", "").strip(),
+                "start_date": request.form.get(f"start_date_{idx}", "").strip(),
+                "end_date": request.form.get(f"end_date_{idx}", "").strip(),
+                "notes": request.form.get(f"notes_{idx}", "").strip(),
+                "detail_url": request.form.get(f"detail_url_{idx}", "").strip(),
+                "documents": [],
+                "error": None,
+            }
+        )
+
+    if not regatta_data:
+        msg = json.dumps({"type": "error", "message": "No regattas selected."})
+        return Response(
+            f"data: {msg}\n\n",
+            content_type="text/event-stream",
+        )
+
+    # Check if any regattas have detail URLs
+    has_detail_urls = any(r["detail_url"] for r in regatta_data)
+
+    def _sse(event: dict) -> str:
+        return f"data: {json.dumps(event)}\n\n"
+
+    def generate():
+        app = current_app._get_current_object()
+        total_docs = 0
+
+        if not has_detail_urls:
+            yield _sse(
+                {
+                    "type": "progress",
+                    "message": "No detail URLs found — skipping document discovery.",
+                }
+            )
+        else:
+            for r in regatta_data:
+                name = r["name"]
+                if not r["detail_url"]:
+                    yield _sse(
+                        {
+                            "type": "progress",
+                            "message": f"Skipping {name} — no detail URL",
+                        }
+                    )
+                    continue
+
+                yield _sse({"type": "progress", "message": f"Fetching: {name}..."})
+
+                try:
+                    with app.app_context():
+                        content = _fetch_url_content(r["detail_url"])
+                        docs = discover_documents(content, name, r["detail_url"])
+                    r["documents"] = docs
+                    total_docs += len(docs)
+
+                    if docs:
+                        doc_types = ", ".join(d["doc_type"] for d in docs)
+                        yield _sse({"type": "result", "message": f"Found: {doc_types}"})
+                    else:
+                        yield _sse({"type": "result", "message": "No documents found"})
+
+                except (ValueError, requests.RequestException) as e:
+                    r["error"] = str(e)
+                    yield _sse(
+                        {"type": "error", "message": f"Could not fetch page: {e}"}
+                    )
+                except (ConnectionError, Exception) as e:
+                    r["error"] = str(e)
+                    yield _sse({"type": "error", "message": f"Error: {e}"})
+
+        _discovery_results[task_id] = regatta_data
+
+        regattas_with_docs = sum(1 for r in regatta_data if r["documents"])
+        summary = f"Found {total_docs} document(s) for {regattas_with_docs} regatta(s)"
+        yield _sse({"type": "done", "task_id": task_id, "summary": summary})
+
+    return Response(generate(), content_type="text/event-stream")
+
+
+@bp.route("/admin/import-schedule/documents")
+@login_required
+def import_schedule_documents():
+    denied = _require_admin()
+    if denied:
+        return denied
+
+    task_id = request.args.get("task_id", "")
+    if not task_id or task_id not in _discovery_results:
+        flash("Document discovery results not found or expired.", "error")
+        return redirect(url_for("admin.import_schedule"))
+
+    regatta_data = _discovery_results.pop(task_id)
+
+    return render_template(
+        "admin/import_schedule_documents.html",
+        regattas=regatta_data,
+    )
