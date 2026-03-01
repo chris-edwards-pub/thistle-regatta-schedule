@@ -1,5 +1,12 @@
 # Version History
 
+## 0.26.0
+- Navbar redesign: teal pill-shaped buttons for nav links (Home, iCal, Crew, Import)
+- Circular teal avatar badge for user initials dropdown
+- Nav menu positioned at 2/3 height of header, vertically aligned with logo
+- White text on pill buttons with light teal hover effect
+- Add logo image and favicon to navbar branding
+
 ## 0.25.0
 - Add `boat_class` column to Regatta model (free text, defaults to "TBD")
 - Class column displayed on main schedule, PDF, and import preview tables
