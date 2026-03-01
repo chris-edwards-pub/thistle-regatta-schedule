@@ -1,5 +1,39 @@
 /* Race Crew Network */
 
+.nav-pill-link {
+    background-color: rgba(13, 148, 136, 0.15);
+    border-radius: 20px;
+    padding: 8px 18px !important;
+    font-size: 1rem;
+    font-weight: 500;
+    color: #fff !important;
+    transition: background-color 0.2s, color 0.2s;
+}
+
+.nav-pill-link:hover,
+.nav-pill-link:focus {
+    background-color: rgba(13, 148, 136, 0.35);
+    color: #5eead4 !important;
+}
+
+.nav-menu-position {
+    align-self: flex-end;
+    padding-bottom: 20px;
+}
+
+.nav-avatar {
+    background-color: #0d9488;
+    color: #fff !important;
+    border-radius: 50%;
+    width: 42px;
+    height: 42px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 0.95rem;
+}
+
 .rsvp-yes { color: #198754; font-weight: bold; }
 .rsvp-no { color: #dc3545; }
 .rsvp-maybe { color: #ffc107; font-weight: bold; }
