@@ -1,5 +1,8 @@
 # Version History
 
+## 0.26.1
+- Make favicon background transparent using edge flood fill
+
 ## 0.26.0
 - Navbar redesign: teal pill-shaped buttons for nav links (Home, iCal, Crew, Import)
 - Circular teal avatar badge for user initials dropdown
